@@ -1,0 +1,510 @@
+import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+
+class CheckoutScreen extends StatefulWidget {
+  const CheckoutScreen({super.key});
+
+  @override
+  State<CheckoutScreen> createState() => _CheckoutScreenState();
+}
+
+class _CheckoutScreenState extends State<CheckoutScreen> {
+  final ApiService _api = ApiService();
+  bool _loading = true;
+  bool _submitting = false;
+  String? _error;
+
+  // Data from API
+  List<dynamic> _bankAccounts = [];
+  List<dynamic> _cities = [];
+  Map<String, dynamic> _couriers = {};
+  int _totalWeight = 0;
+  int _cartTotal = 0;
+  int _pointsBalance = 0;
+  int _maxRedeemPoints = 0;
+
+  // Selected values
+  final _addressC = TextEditingController();
+  int? _selectedCityId;
+  String? _selectedCourier;
+  String? _selectedService;
+  int _shippingCost = 0;
+  String _paymentMethod = 'bank_transfer';
+  int? _selectedBankId;
+  final _couponC = TextEditingController();
+  int _pointsToUse = 0;
+  bool _usePoints = false;
+
+  Map<String, dynamic>? _availableServices;
+  bool _loadingRates = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCheckout();
+  }
+
+  @override
+  void dispose() {
+    _addressC.dispose();
+    _couponC.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCheckout() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await _api.get('/checkout');
+      if (!mounted) return;
+      setState(() {
+        _bankAccounts = (res['bank_accounts'] as List?) ?? [];
+        _cities = (res['cities'] as List?) ?? [];
+        _couriers = Map<String, dynamic>.from(res['couriers'] as Map? ?? {});
+        _totalWeight = res['total_weight'] as int? ?? 0;
+        _cartTotal = (res['cart']['total'] as int?) ?? 0;
+        _pointsBalance = res['points_balance'] as int? ?? 0;
+        _maxRedeemPoints = res['max_redeem_points'] as int? ?? 0;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Gagal memuat data: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _loadRates() async {
+    if (_selectedCityId == null || _totalWeight <= 0) return;
+    setState(() => _loadingRates = true);
+    try {
+      final res = await _api.post('/checkout/courier-rates', body: {
+        'destination': _selectedCityId,
+        'weight': _totalWeight,
+      });
+      if (!mounted) return;
+      setState(() {
+        _couriers = Map<String, dynamic>.from(res['couriers'] as Map? ?? {});
+        _selectedCourier = null;
+        _selectedService = null;
+        _shippingCost = 0;
+        _availableServices = null;
+        _loadingRates = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingRates = false);
+    }
+  }
+
+  int get _discountAmount {
+    // TODO: actual coupon calculation
+    return 0;
+  }
+
+  int get _pointsDiscount {
+    if (!_usePoints || _pointsToUse <= 0) return 0;
+    final rate = 100; // points_redeem_rate default
+    final maxDiscount = (_cartTotal * 0.5).toInt();
+    return (_pointsToUse * rate).clamp(0, maxDiscount);
+  }
+
+  int get _grandTotal {
+    return _cartTotal + _shippingCost - _discountAmount - _pointsDiscount;
+  }
+
+  Future<void> _submit() async {
+    if (_addressC.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Alamat pengiriman wajib diisi')));
+      return;
+    }
+    if (_selectedCityId == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Pilih kota tujuan')));
+      return;
+    }
+    if (_selectedCourier == null || _selectedService == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Pilih kurir dan layanan')));
+      return;
+    }
+    if (_paymentMethod == 'bank_transfer' && _selectedBankId == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Pilih rekening bank tujuan')));
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final res = await _api.post('/checkout/process', body: {
+        'shipping_address': _addressC.text.trim(),
+        'destination_city': _selectedCityId,
+        'courier': _selectedCourier,
+        'courier_service': _selectedService,
+        'payment_method': _paymentMethod,
+        'bank_account_id': _paymentMethod == 'bank_transfer' ? _selectedBankId : null,
+        'coupon_code': _couponC.text.trim().isEmpty ? null : _couponC.text.trim(),
+        'points_to_use': _usePoints ? _pointsToUse : 0,
+        'notes': null,
+      });
+      if (!mounted) return;
+      final order = res['order'] as Map<String, dynamic>;
+      final midtransUrl = order['midtrans_redirect_url'] as String?;
+
+      if (midtransUrl != null && midtransUrl.isNotEmpty) {
+        // For web, open in new tab. For mobile, launch URL.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Redirect ke Midtrans: $midtransUrl')),
+        );
+      }
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _OrderSuccessScreen(
+            orderNumber: order['order_number'] as String,
+            grandTotal: order['grand_total_formatted'] as String,
+            paymentMethod: order['payment_method'] as String,
+            midtransUrl: midtransUrl,
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Gagal: $e')));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Checkout'), backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Checkout'), backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white),
+        body: Center(child: Text(_error!)),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Checkout'),
+        backgroundColor: const Color(0xFF1A73E8),
+        foregroundColor: Colors.white,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Alamat Pengiriman', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _addressC,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Masukkan alamat lengkap',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Kota Tujuan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              initialValue: _selectedCityId,
+              isExpanded: true,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+              hint: const Text('Pilih kota'),
+              items: _cities.map((c) => DropdownMenuItem(
+                value: c['id'] as int,
+                child: Text('${c['name']} (${c['province']})', style: const TextStyle(fontSize: 13)),
+              )).toList(),
+              onChanged: (v) {
+                setState(() => _selectedCityId = v);
+                _loadRates();
+              },
+            ),
+            const SizedBox(height: 16),
+            const Text('Kurir', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (_loadingRates)
+              const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+            else if (_couriers.isEmpty)
+              const Text('Pilih kota terlebih dahulu', style: TextStyle(color: Colors.grey))
+            else
+              RadioGroup<String>(
+                groupValue: _selectedCourier,
+                onChanged: (v) {
+                  setState(() {
+                    _selectedCourier = v;
+                    _selectedService = null;
+                    _shippingCost = 0;
+                    final data = _couriers[v] as Map<String, dynamic>?;
+                    _availableServices = data?['services'] as Map<String, dynamic>? ?? {};
+                  });
+                },
+                child: Column(
+                  children: _couriers.entries.map((entry) {
+                    final code = entry.key;
+                    final data = entry.value as Map<String, dynamic>;
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: RadioListTile<String>(
+                        title: Text(data['name'] as String? ?? code.toUpperCase()),
+                        value: code,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            if (_availableServices != null && _availableServices!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('Layanan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 4),
+              RadioGroup<String>(
+                groupValue: _selectedService,
+                onChanged: (v) {
+                  setState(() {
+                    _selectedService = v;
+                    final data = _availableServices?[v] as Map<String, dynamic>?;
+                    _shippingCost = data?['cost'] as int? ?? 0;
+                  });
+                },
+                child: Column(
+                  children: _availableServices!.entries.map((entry) {
+                    final svc = entry.key;
+                    final data = entry.value as Map<String, dynamic>;
+                    final cost = data['cost'] as int? ?? 0;
+                    return RadioListTile<String>(
+                      title: Text('$svc — Rp ${cost.toString()}'),
+                      subtitle: data['etd'] != null ? Text('Estimasi: ${data['etd']}') : null,
+                      value: svc,
+                      dense: true,
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Text('Pembayaran', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _paymentMethod,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+              items: [
+                DropdownMenuItem(value: 'bank_transfer', child: const Text('Transfer Bank')),
+                DropdownMenuItem(value: 'midtrans', child: const Text('Midtrans (Kartu/VA/QRIS/E-Wallet)')),
+              ],
+              onChanged: (v) {
+                setState(() {
+                  _paymentMethod = v!;
+                  _selectedBankId = null;
+                });
+              },
+            ),
+            if (_paymentMethod == 'bank_transfer' && _bankAccounts.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('Pilih Rekening Tujuan', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              RadioGroup<int>(
+                groupValue: _selectedBankId,
+                onChanged: (v) => setState(() => _selectedBankId = v),
+                child: Column(
+                  children: _bankAccounts.map((b) => RadioListTile<int>(
+                    title: Text('${b['bank_name']} — ${b['account_number']}'),
+                    subtitle: Text('a.n. ${b['account_holder']}'),
+                    value: b['id'] as int,
+                    dense: true,
+                  )).toList(),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            const Text('Kupon (opsional)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _couponC,
+              decoration: const InputDecoration(
+                hintText: 'Masukkan kode kupon',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (_pointsBalance > 0) ...[
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                title: const Text('Gunakan Poin'),
+                subtitle: Text('Saldo: $_pointsBalance poin (maks $_maxRedeemPoints)'),
+                value: _usePoints,
+                onChanged: (v) => setState(() => _usePoints = v!),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              if (_usePoints)
+                Padding(
+                  padding: const EdgeInsets.only(left: 16),
+                  child: TextFormField(
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Jumlah poin (maks $_maxRedeemPoints)',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) {
+                      final parsed = int.tryParse(v) ?? 0;
+                      setState(() => _pointsToUse = parsed.clamp(0, _maxRedeemPoints));
+                    },
+                  ),
+                ),
+            ],
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _summaryRow('Subtotal', 'Rp $_cartTotal'),
+                    _summaryRow('Ongkos Kirim', _shippingCost > 0 ? 'Rp $_shippingCost' : '-'),
+                    if (_discountAmount > 0)
+                      _summaryRow('Diskon Kupon', '-Rp $_discountAmount', color: Colors.green),
+                    if (_pointsDiscount > 0)
+                      _summaryRow('Diskon Poin', '-Rp $_pointsDiscount', color: Colors.green),
+                    const Divider(),
+                    _summaryRow('Total', 'Rp $_grandTotal', color: const Color(0xFF1A73E8), bold: true),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _submitting ? null : _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A73E8),
+                  foregroundColor: Colors.white,
+                ),
+                child: _submitting
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Buat Pesanan', style: TextStyle(fontSize: 16)),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryRow(String label, String value, {Color? color, bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: Colors.grey[600])),
+          Text(value, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal, color: color ?? Colors.black)),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrderSuccessScreen extends StatelessWidget {
+  final String orderNumber;
+  final String grandTotal;
+  final String paymentMethod;
+  final String? midtransUrl;
+
+  const _OrderSuccessScreen({
+    required this.orderNumber,
+    required this.grandTotal,
+    required this.paymentMethod,
+    this.midtransUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Pesanan Dibuat'),
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle, size: 72, color: Colors.green),
+              const SizedBox(height: 16),
+              const Text('Pesanan Berhasil Dibuat!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text('No. Pesanan: $orderNumber', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 8),
+                      Text('Total: $grandTotal', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A73E8))),
+                      const SizedBox(height: 4),
+                      Text(paymentMethod == 'midtrans' ? 'Pembayaran: Midtrans' : 'Pembayaran: Transfer Bank',
+                          style: TextStyle(color: Colors.grey[600])),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              if (midtransUrl != null)
+                ElevatedButton(
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Buka: $midtransUrl')),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A73E8),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Bayar Sekarang'),
+                ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const Scaffold(
+                    body: Center(child: Text('Kembali ke Beranda')),
+                  )),
+                  (_) => false,
+                ),
+                child: const Text('Kembali ke Beranda'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
