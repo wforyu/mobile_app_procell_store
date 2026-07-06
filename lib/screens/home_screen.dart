@@ -67,33 +67,57 @@ class _HomeTabState extends State<_HomeTab> {
   final _searchC = TextEditingController();
   List<Product> _searchResults = [];
   bool _searching = false;
+  String? _selectedCategorySlug;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool _loadingMore = false;
+  final _scrollC = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _scrollC.addListener(_onScroll);
   }
 
   @override
   void dispose() {
     _searchC.dispose();
+    _scrollC.removeListener(_onScroll);
+    _scrollC.dispose();
     super.dispose();
   }
 
+  void _onScroll() {
+    if (_scrollC.position.pixels >= _scrollC.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
   Future<void> _loadData() async {
+    _currentPage = 1;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final prod = await _api.get('/products');
+      final params = <String>['/products'];
+      if (_selectedCategorySlug != null) {
+        params.add('?category=$_selectedCategorySlug');
+      }
+      final prod = _selectedCategorySlug != null
+          ? await _api.get('/products?category=$_selectedCategorySlug')
+          : await _api.get('/products');
       final cat = await _api.get('/categories');
       final ban = await _api.get('/banners');
       if (!mounted) return;
+      final prodData = prod as Map<String, dynamic>;
+      final meta = prodData['meta'] as Map<String, dynamic>;
       setState(() {
-        _products = (prod['data'] as List)
+        _products = (prodData['data'] as List)
             .map((e) => Product.fromJson(e as Map<String, dynamic>))
             .toList();
+        _hasMore = (meta['current_page'] as int) < (meta['last_page'] as int);
         _categories = (cat as List)
             .map((e) => Category.fromJson(e as Map<String, dynamic>))
             .toList();
@@ -115,6 +139,37 @@ class _HomeTabState extends State<_HomeTab> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final nextPage = _currentPage + 1;
+      var endpoint = '/products?page=$nextPage';
+      if (_selectedCategorySlug != null) {
+        endpoint += '&category=$_selectedCategorySlug';
+      }
+      final res = await _api.get(endpoint);
+      if (!mounted) return;
+      final resMap = res as Map<String, dynamic>;
+      final meta = resMap['meta'] as Map<String, dynamic>;
+      setState(() {
+        _products.addAll((resMap['data'] as List)
+            .map((e) => Product.fromJson(e as Map<String, dynamic>)));
+        _currentPage = nextPage;
+        _hasMore = (meta['current_page'] as int) < (meta['last_page'] as int);
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingMore = false);
+    }
+  }
+
+  void _selectCategory(String? slug) {
+    setState(() => _selectedCategorySlug = slug);
+    _loadData();
   }
 
   Future<void> _search(String q) async {
@@ -260,14 +315,44 @@ class _HomeTabState extends State<_HomeTab> {
                                   scrollDirection: Axis.horizontal,
                                   padding:
                                       const EdgeInsets.symmetric(horizontal: 12),
-                                  itemCount: _categories.length,
+                                  itemCount: _categories.length + 1,
                                   separatorBuilder: (_, _) =>
                                       const SizedBox(width: 8),
-                                  itemBuilder: (_, i) => ActionChip(
-                                    label: Text(_categories[i].name,
-                                        style: const TextStyle(fontSize: 12)),
-                                    onPressed: () {},
-                                  ),
+                                  itemBuilder: (_, i) {
+                                    if (i == 0) {
+                                      final allSelected =
+                                          _selectedCategorySlug == null;
+                                      return ActionChip(
+                                        label: Text('Semua',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                color: allSelected
+                                                    ? Colors.white
+                                                    : null)),
+                                        backgroundColor: allSelected
+                                            ? const Color(0xFF1A73E8)
+                                            : null,
+                                        onPressed: () =>
+                                            _selectCategory(null),
+                                      );
+                                    }
+                                    final c = _categories[i - 1];
+                                    final selected =
+                                        _selectedCategorySlug == c.slug;
+                                    return ActionChip(
+                                      label: Text(c.name,
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: selected
+                                                  ? Colors.white
+                                                  : null)),
+                                      backgroundColor: selected
+                                          ? const Color(0xFF1A73E8)
+                                          : null,
+                                      onPressed: () => _selectCategory(
+                                          selected ? null : c.slug),
+                                    );
+                                  },
                                 ),
                               ),
                             ),
@@ -295,6 +380,13 @@ class _HomeTabState extends State<_HomeTab> {
                             ),
                           ),
                         ),
+                        if (_loadingMore)
+                          const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                          ),
                         const SliverToBoxAdapter(child: SizedBox(height: 16)),
                       ],
                     ],

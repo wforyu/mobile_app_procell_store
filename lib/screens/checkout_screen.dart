@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -32,6 +33,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _paymentMethod = 'bank_transfer';
   int? _selectedBankId;
   final _couponC = TextEditingController();
+  int _couponDiscount = 0;
+  String? _appliedCouponCode;
+  bool _checkingCoupon = false;
   int _pointsToUse = 0;
   bool _usePoints = false;
 
@@ -84,6 +88,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  Future<void> _checkCoupon() async {
+    final code = _couponC.text.trim();
+    if (code.isEmpty) return;
+    setState(() => _checkingCoupon = true);
+    try {
+      final res = await _api.post('/coupon/check', body: {
+        'code': code,
+        'cart_total': _cartTotal,
+      });
+      if (!mounted) return;
+      setState(() {
+        _couponDiscount = res['discount'] as int? ?? 0;
+        _appliedCouponCode = code;
+        _checkingCoupon = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Diskon: ${res['discount_formatted']}')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _couponDiscount = 0;
+        _appliedCouponCode = null;
+        _checkingCoupon = false;
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _removeCoupon() async {
+    setState(() {
+      _couponDiscount = 0;
+      _appliedCouponCode = null;
+      _couponC.clear();
+    });
+  }
+
   Future<void> _loadRates() async {
     if (_selectedCityId == null || _totalWeight <= 0) return;
     setState(() => _loadingRates = true);
@@ -107,10 +149,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  int get _discountAmount {
-    // TODO: actual coupon calculation
-    return 0;
-  }
+  int get _discountAmount => _couponDiscount;
 
   int get _pointsDiscount {
     if (!_usePoints || _pointsToUse <= 0) return 0;
@@ -344,13 +383,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 16),
             const Text('Kupon (opsional)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            TextFormField(
-              controller: _couponC,
-              decoration: const InputDecoration(
-                hintText: 'Masukkan kode kupon',
-                border: OutlineInputBorder(),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _couponC,
+                    decoration: const InputDecoration(
+                      hintText: 'Masukkan kode kupon',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_appliedCouponCode != null)
+                  TextButton(
+                    onPressed: _removeCoupon,
+                    child: const Text('Hapus'),
+                  )
+                else
+                  ElevatedButton(
+                    onPressed: _checkingCoupon ? null : _checkCoupon,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1A73E8),
+                      foregroundColor: Colors.white,
+                    ),
+                    child: _checkingCoupon
+                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Gunakan'),
+                  ),
+              ],
             ),
+            if (_appliedCouponCode != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('Kupon "$_appliedCouponCode" aktif',
+                    style: const TextStyle(color: Colors.green, fontSize: 12)),
+              ),
             if (_pointsBalance > 0) ...[
               const SizedBox(height: 16),
               CheckboxListTile(
@@ -479,10 +548,17 @@ class _OrderSuccessScreen extends StatelessWidget {
               const SizedBox(height: 24),
               if (midtransUrl != null)
                 ElevatedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Buka: $midtransUrl')),
-                    );
+                  onPressed: () async {
+                    final uri = Uri.parse(midtransUrl!);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    } else {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Gagal membuka: $midtransUrl')),
+                        );
+                      }
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1A73E8),
