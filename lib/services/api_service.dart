@@ -46,13 +46,13 @@ class ApiService {
     return headers;
   }
 
-  Future<Map<String, dynamic>> get(String endpoint) async {
+  Future<dynamic> get(String endpoint) async {
     final url = Uri.parse('${AppConfig.baseUrl}$endpoint');
     final response = await http.get(url, headers: _headers);
     return _handleResponse(response);
   }
 
-  Future<Map<String, dynamic>> post(String endpoint,
+  Future<dynamic> post(String endpoint,
       {Map<String, dynamic>? body}) async {
     final url = Uri.parse('${AppConfig.baseUrl}$endpoint');
     final response = await http.post(
@@ -63,7 +63,7 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  Future<Map<String, dynamic>> put(String endpoint,
+  Future<dynamic> put(String endpoint,
       {Map<String, dynamic>? body}) async {
     final url = Uri.parse('${AppConfig.baseUrl}$endpoint');
     final response = await http.put(
@@ -74,13 +74,13 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  Future<Map<String, dynamic>> delete(String endpoint) async {
+  Future<dynamic> delete(String endpoint) async {
     final url = Uri.parse('${AppConfig.baseUrl}$endpoint');
     final response = await http.delete(url, headers: _headers);
     return _handleResponse(response);
   }
 
-  Future<Map<String, dynamic>> uploadFile(
+  Future<dynamic> uploadFile(
     String endpoint, {
     required String field,
     required File file,
@@ -101,7 +101,7 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  Future<Map<String, dynamic>> uploadFiles(
+  Future<dynamic> uploadFiles(
     String endpoint, {
     required String field,
     required List<File> files,
@@ -124,7 +124,7 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  Map<String, dynamic> _handleResponse(http.Response response) {
+  dynamic _handleResponse(http.Response response) {
     if (response.statusCode == 401) {
       clearToken();
       _onUnauthenticated?.call();
@@ -133,14 +133,18 @@ class ApiService {
         message: 'Sesi berakhir. Silakan login ulang.',
       );
     }
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return body;
+      return decoded;
     }
     throw ApiException(
       statusCode: response.statusCode,
-      message: body['message'] as String? ?? 'Unknown error',
-      errors: body['errors'] as Map<String, dynamic>?,
+      message: decoded is Map<String, dynamic>
+          ? (decoded['message'] as String? ?? 'Unknown error')
+          : 'Unknown error',
+      errors: decoded is Map<String, dynamic>
+          ? decoded['errors'] as Map<String, dynamic>?
+          : null,
     );
   }
 }
