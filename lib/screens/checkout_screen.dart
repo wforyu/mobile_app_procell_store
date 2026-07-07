@@ -302,7 +302,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     _selectedService = null;
                     _shippingCost = 0;
                     final data = _couriers[v] as Map<String, dynamic>?;
-                    _availableServices = data?['services'] as Map<String, dynamic>? ?? {};
+                    final svc = data?['services'];
+                    if (svc is Map) {
+                      _availableServices = Map<String, dynamic>.from(svc as Map);
+                    } else {
+                      _availableServices = {};
+                    }
                   });
                 },
                 child: Column(
@@ -328,18 +333,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 onChanged: (v) {
                   setState(() {
                     _selectedService = v;
-                    final data = _availableServices?[v] as Map<String, dynamic>?;
-                    _shippingCost = data?['cost'] as int? ?? 0;
+                    final svcVal = _availableServices?[v];
+                    _shippingCost = (svcVal is int) ? svcVal : ((svcVal as Map?)?['cost'] as int? ?? 0);
                   });
                 },
                 child: Column(
                   children: _availableServices!.entries.map((entry) {
                     final svc = entry.key;
-                    final data = entry.value as Map<String, dynamic>;
-                    final cost = data['cost'] as int? ?? 0;
+                    final svcVal = entry.value;
+                    final cost = (svcVal is int) ? svcVal : ((svcVal as Map?)?['cost'] as int? ?? 0);
+                    final etd = (svcVal is Map) ? (svcVal as Map)['etd'] as String? : null;
                     return RadioListTile<String>(
                       title: Text('$svc — Rp ${cost.toString()}'),
-                      subtitle: data['etd'] != null ? Text('Estimasi: ${data['etd']}') : null,
+                      subtitle: etd != null ? Text('Estimasi: $etd') : null,
                       value: svc,
                       dense: true,
                     );
