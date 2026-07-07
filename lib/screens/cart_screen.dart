@@ -28,7 +28,7 @@ class _CartScreenState extends State<CartScreen> {
       final res = await _api.get('/cart');
       if (!mounted) return;
       setState(() {
-        _cart = Cart.fromJson(res['data'] as Map<String, dynamic>);
+        _cart = Cart.fromJson(res as Map<String, dynamic>);
         _loading = false;
       });
     } catch (_) {

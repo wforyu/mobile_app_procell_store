@@ -28,7 +28,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
       final res = await _api.get('/wishlist');
       if (!mounted) return;
       setState(() {
-        _products = (res as List)
+        _products = (res['data'] as List)
             .map((e) => Product.fromJson(e as Map<String, dynamic>))
             .toList();
         _loading = false;
