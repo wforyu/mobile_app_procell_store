@@ -3,6 +3,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/cart.dart';
 import '../services/api_service.dart';
 import 'checkout_screen.dart';
+import 'login_screen.dart';
+import '../helpers/theme.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -19,6 +21,20 @@ class _CartScreenState extends State<CartScreen> {
   @override
   void initState() {
     super.initState();
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    if (!_api.hasToken) {
+      final loggedIn = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      if (loggedIn != true || !mounted) {
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+    }
     _loadCart();
   }
 
@@ -56,7 +72,7 @@ class _CartScreenState extends State<CartScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Keranjang'),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
       body: _loading
@@ -95,7 +111,7 @@ class _CartScreenState extends State<CartScreen> {
                                       style: const TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
-                                          color: Color(0xFF1A73E8))),
+                                          color: AppColors.primary)),
                                 ],
                               ),
                               const SizedBox(height: 16),
@@ -108,7 +124,7 @@ class _CartScreenState extends State<CartScreen> {
                                     MaterialPageRoute(builder: (_) => const CheckoutScreen()),
                                   ),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1A73E8),
+                                    backgroundColor: AppColors.primary,
                                     foregroundColor: Colors.white,
                                   ),
                                   child: const Text('Lanjut Checkout',
@@ -169,7 +185,7 @@ class _CartScreenState extends State<CartScreen> {
                                         Text(item.subtotalFormatted,
                                             style: const TextStyle(
                                                 fontWeight: FontWeight.bold,
-                                                color: Color(0xFF1A73E8))),
+                                                color: AppColors.primary)),
                                       ],
                                     ),
                                   ],
@@ -177,7 +193,20 @@ class _CartScreenState extends State<CartScreen> {
                               ),
                               IconButton(
                                 icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                                onPressed: () => _removeItem(item.productId),
+                                onPressed: () async {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Hapus Produk'),
+                                      content: Text('Hapus ${prod?.name ?? "produk"} dari keranjang?'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+                                        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Hapus', style: TextStyle(color: Colors.red))),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirm == true) _removeItem(item.productId);
+                                },
                               ),
                             ],
                           ),

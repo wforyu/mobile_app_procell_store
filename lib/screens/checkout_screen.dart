@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
+import '../helpers/price_formatter.dart';
+import '../helpers/theme.dart';
+import 'login_screen.dart';
+import 'home_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -45,6 +49,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    if (!_api.hasToken) {
+      final loggedIn = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      if (loggedIn != true || !mounted) {
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+    }
     _loadCheckout();
   }
 
@@ -93,10 +111,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (code.isEmpty) return;
     setState(() => _checkingCoupon = true);
     try {
-      final res = await _api.post('/coupon/check', body: {
-        'code': code,
-        'cart_total': _cartTotal,
-      });
+      final res = await _api.applyCoupon(code, _cartTotal);
       if (!mounted) return;
       setState(() {
         _couponDiscount = res['discount'] as int? ?? 0;
@@ -119,6 +134,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _removeCoupon() async {
+    try {
+      await _api.removeCoupon();
+    } catch (_) {}
     setState(() {
       _couponDiscount = 0;
       _appliedCouponCode = null;
@@ -202,10 +220,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final midtransUrl = order['midtrans_redirect_url'] as String?;
 
       if (midtransUrl != null && midtransUrl.isNotEmpty) {
-        // For web, open in new tab. For mobile, launch URL.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Redirect ke Midtrans: $midtransUrl')),
-        );
+        final uri = Uri.parse(midtransUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
       }
 
       if (!mounted) return;
@@ -237,13 +255,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Checkout'), backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white),
+        appBar: AppBar(title: const Text('Checkout'), backgroundColor: AppColors.primary, foregroundColor: Colors.white),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Checkout'), backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white),
+        appBar: AppBar(title: const Text('Checkout'), backgroundColor: AppColors.primary, foregroundColor: Colors.white),
         body: Center(child: Text(_error!)),
       );
     }
@@ -251,7 +269,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Checkout'),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
@@ -304,7 +322,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     final data = _couriers[v] as Map<String, dynamic>?;
                     final svc = data?['services'];
                     if (svc is Map) {
-                      _availableServices = Map<String, dynamic>.from(svc as Map);
+                      _availableServices = Map<String, dynamic>.from(svc);
                     } else {
                       _availableServices = {};
                     }
@@ -342,9 +360,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     final svc = entry.key;
                     final svcVal = entry.value;
                     final cost = (svcVal is int) ? svcVal : ((svcVal as Map?)?['cost'] as int? ?? 0);
-                    final etd = (svcVal is Map) ? (svcVal as Map)['etd'] as String? : null;
+                    final etd = (svcVal is Map) ? svcVal['etd'] as String? : null;
                     return RadioListTile<String>(
-                      title: Text('$svc — Rp ${cost.toString()}'),
+                      title: Text('$svc — ${formatPrice(cost)}'),
                       subtitle: etd != null ? Text('Estimasi: $etd') : null,
                       value: svc,
                       dense: true,
@@ -411,7 +429,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ElevatedButton(
                     onPressed: _checkingCoupon ? null : _checkCoupon,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1A73E8),
+                      backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
                     ),
                     child: _checkingCoupon
@@ -457,14 +475,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    _summaryRow('Subtotal', 'Rp $_cartTotal'),
-                    _summaryRow('Ongkos Kirim', _shippingCost > 0 ? 'Rp $_shippingCost' : '-'),
+                    _summaryRow('Subtotal', formatPrice(_cartTotal)),
+                    _summaryRow('Ongkos Kirim', _shippingCost > 0 ? formatPrice(_shippingCost) : '-'),
                     if (_discountAmount > 0)
-                      _summaryRow('Diskon Kupon', '-Rp $_discountAmount', color: Colors.green),
+                      _summaryRow('Diskon Kupon', '-${formatPrice(_discountAmount)}', color: Colors.green),
                     if (_pointsDiscount > 0)
-                      _summaryRow('Diskon Poin', '-Rp $_pointsDiscount', color: Colors.green),
+                      _summaryRow('Diskon Poin', '-${formatPrice(_pointsDiscount)}', color: Colors.green),
                     const Divider(),
-                    _summaryRow('Total', 'Rp $_grandTotal', color: const Color(0xFF1A73E8), bold: true),
+                    _summaryRow('Total', formatPrice(_grandTotal), color: AppColors.primary, bold: true),
                   ],
                 ),
               ),
@@ -476,7 +494,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               child: ElevatedButton(
                 onPressed: _submitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A73E8),
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: _submitting
@@ -543,7 +561,7 @@ class _OrderSuccessScreen extends StatelessWidget {
                     children: [
                       Text('No. Pesanan: $orderNumber', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
                       const SizedBox(height: 8),
-                      Text('Total: $grandTotal', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A73E8))),
+                      Text('Total: $grandTotal', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primary)),
                       const SizedBox(height: 4),
                       Text(paymentMethod == 'midtrans' ? 'Pembayaran: Midtrans' : 'Pembayaran: Transfer Bank',
                           style: TextStyle(color: Colors.grey[600])),
@@ -567,7 +585,7 @@ class _OrderSuccessScreen extends StatelessWidget {
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A73E8),
+                    backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                   ),
                   child: const Text('Bayar Sekarang'),
@@ -576,9 +594,7 @@ class _OrderSuccessScreen extends StatelessWidget {
               TextButton(
                 onPressed: () => Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const Scaffold(
-                    body: Center(child: Text('Kembali ke Beranda')),
-                  )),
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
                   (_) => false,
                 ),
                 child: const Text('Kembali ke Beranda'),

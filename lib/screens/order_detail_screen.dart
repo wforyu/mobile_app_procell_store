@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/order.dart';
 import '../services/api_service.dart';
+import '../helpers/price_formatter.dart';
+import '../helpers/theme.dart';
 import 'return_screen.dart';
 
 class OrderDetailScreen extends StatefulWidget {
@@ -219,7 +221,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detail Pesanan'),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
       body: _loading
@@ -279,6 +281,31 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                             ),
                           ),
                         ),
+                        if (_order!.paymentProof != null) ...[
+                          const SizedBox(height: 8),
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Bukti Pembayaran',
+                                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 8),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: CachedNetworkImage(
+                                      imageUrl: _order!.paymentProof!,
+                                      height: 120,
+                                      width: double.infinity,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         const Text('Produk', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
@@ -303,11 +330,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                           Text(item.productName ?? 'Produk',
                                               style: const TextStyle(fontWeight: FontWeight.w500)),
                                           const SizedBox(height: 4),
-                                          Text('${item.quantity}x Rp ${item.price}'),
+                                          Text('${item.quantity}x ${formatPrice(item.price)}'),
                                         ],
                                       ),
                                     ),
-                                    Text('Rp ${item.subtotal}',
+                                    Text(formatPrice(item.subtotal),
                                         style: const TextStyle(fontWeight: FontWeight.bold)),
                                   ],
                                 ),
@@ -319,12 +346,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                             padding: const EdgeInsets.all(16),
                             child: Column(
                               children: [
-                                _row('Subtotal', 'Rp ${_order!.totalAmount}'),
-                                _row('Ongkir', 'Rp ${_order!.shippingCost}'),
+                                _row('Subtotal', formatPrice(_order!.totalAmount)),
+                                _row('Ongkir', formatPrice(_order!.shippingCost)),
                                 if (_order!.discountAmount > 0)
-                                  _row('Diskon', '-Rp ${_order!.discountAmount}', color: Colors.green),
+                                  _row('Diskon', '-${formatPrice(_order!.discountAmount)}', color: Colors.green),
                                 const Divider(),
-                                _row('Total', _order!.grandTotalFormatted, color: const Color(0xFF1A73E8), bold: true),
+                                _row('Total', _order!.grandTotalFormatted, color: AppColors.primary, bold: true),
                               ],
                             ),
                           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/api_service.dart';
+import '../helpers/theme.dart';
 import 'order_detail_screen.dart';
 
 class OrdersScreen extends StatefulWidget {
@@ -22,6 +23,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _loadOrders() async {
+    if (!_api.hasToken) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     setState(() => _loading = true);
     try {
       final res = await _api.get('/orders');
@@ -62,7 +67,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pesanan Saya'),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
       body: _loading
@@ -124,9 +129,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     Text(o.createdAt,
                                         style: TextStyle(fontSize: 12, color: Colors.grey[400])),
                                     Text(o.grandTotalFormatted,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: Color(0xFF1A73E8))),
+                                            color: AppColors.primary)),
                                   ],
                                 ),
                               ],

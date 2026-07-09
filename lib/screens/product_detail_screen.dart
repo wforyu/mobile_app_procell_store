@@ -2,11 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
+import 'compare_screen.dart';
+import 'checkout_screen.dart';
+import 'login_screen.dart';
+import '../helpers/theme.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final Product product;
 
   const ProductDetailScreen({super.key, required this.product});
+
+  static final List<int> compareIds = <int>[];
 
   @override
   State<ProductDetailScreen> createState() => _ProductDetailScreenState();
@@ -44,6 +50,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _toggleWishlist() async {
+    if (!_api.hasToken) {
+      final loggedIn = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      if (loggedIn != true || !mounted) return;
+    }
     try {
       final res = await _api.post('/wishlist/toggle', body: {
         'product_id': (_product ?? widget.product).id,
@@ -58,16 +71,97 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _addToCart() async {
+    if (!_api.hasToken) {
+      final loggedIn = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      if (loggedIn != true || !mounted) return;
+    }
     try {
       await _api.post('/cart/add',
           body: {'product_id': _product!.id, 'quantity': _qty});
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ditambahkan ke keranjang')));
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text('Ditambahkan ke keranjang'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        ),
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _quickBuy() async {
+    if (!_api.hasToken) {
+      final loggedIn = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      if (loggedIn != true || !mounted) return;
+    }
+    final pid = (_product ?? widget.product).id;
+    try {
+      await _api.quickBuy(pid);
+      if (!mounted) return;
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const CheckoutScreen()));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e')));
+    }
+  }
+
+  Future<void> _requestRestock() async {
+    final pid = (_product ?? widget.product).id;
+    final emailC = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Notifikasi Stok'),
+        content: TextField(
+          controller: emailC,
+          decoration: const InputDecoration(
+            labelText: 'Email Anda',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.emailAddress,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, emailC.text.trim()),
+            child: const Text('Kirim'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || result.isEmpty) return;
+    try {
+      await _api.requestRestock(pid, result);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notifikasi telah dikirim')));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e')));
     }
   }
 
@@ -78,6 +172,27 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       appBar: AppBar(
         title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          IconButton(
+            icon: Icon(
+              ProductDetailScreen.compareIds.contains((_product ?? widget.product).id) ? Icons.compare_arrows : Icons.compare_arrows_outlined,
+            ),
+            onPressed: () {
+              final pid = (_product ?? widget.product).id;
+              if (ProductDetailScreen.compareIds.contains(pid)) {
+                ProductDetailScreen.compareIds.remove(pid);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dihapus dari perbandingan')));
+              } else if (ProductDetailScreen.compareIds.length >= 4) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Maksimal 4 produk')));
+              } else {
+                ProductDetailScreen.compareIds.add(pid);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ditambahkan ke perbandingan')));
+              }
+              setState(() {});
+              if (ProductDetailScreen.compareIds.length >= 2) {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => CompareScreen(productIds: List.from(ProductDetailScreen.compareIds))));
+              }
+            },
+          ),
           IconButton(
             icon: Icon(
               _wishlisted ? Icons.favorite : Icons.favorite_border,
@@ -96,7 +211,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   SizedBox(
                     height: 300,
                     child: PageView.builder(
-                      itemCount: p.images?.length ?? 1,
+                      itemCount: (p.images != null && p.images!.isNotEmpty) ? p.images!.length : 1,
                       onPageChanged: (i) => setState(() => _currentImage = i),
                       itemBuilder: (_, i) {
                         final url = p.images != null && p.images!.isNotEmpty
@@ -138,7 +253,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: _currentImage == i
-                                  ? const Color(0xFF1A73E8)
+                                  ? AppColors.primary
                                   : Colors.grey[300],
                             ),
                           ),
@@ -190,7 +305,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 style: const TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1A73E8))),
+                                    color: AppColors.primary)),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -280,19 +395,56 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ? SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _addToCart,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A73E8),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                  child: const Text('Tambah ke Keranjang',
-                      style: TextStyle(fontSize: 16)),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _loading ? null : _addToCart,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 48),
+                        ),
+                        child: const Text('Tambah ke Keranjang',
+                            style: TextStyle(fontSize: 16)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _loading ? null : _quickBuy,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.primary,
+                          minimumSize: const Size(double.infinity, 48),
+                          side: BorderSide(color: AppColors.primary),
+                        ),
+                        child: const Text('Beli Langsung',
+                            style: TextStyle(fontSize: 16)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             )
-          : null,
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _requestRestock,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Notify Me',
+                        style: TextStyle(fontSize: 16)),
+                  ),
+                ),
+              ),
+            ),
     );
   }
 }

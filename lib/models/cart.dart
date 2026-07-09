@@ -1,3 +1,5 @@
+import '../config.dart';
+
 class Cart {
   final int id;
   final List<CartItem> items;
@@ -97,7 +99,7 @@ class CartProduct {
       priceFormatted: json['price_formatted'] as String? ?? 'Rp 0',
       promoPrice: json['promo_price'] as int?,
       promoPriceFormatted: json['promo_price_formatted'] as String?,
-      image: json['image'] as String?,
+      image: AppConfig.imageUrl(json['image'] as String?),
       stock: json['stock'] as int? ?? 0,
     );
   }

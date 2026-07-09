@@ -1,3 +1,5 @@
+import '../config.dart';
+
 class Order {
   final int id;
   final String orderNumber;
@@ -77,7 +79,7 @@ class Order {
       pointsEarned: json['points_earned'] as int?,
       paymentMethod: json['payment_method'] as String?,
       paymentMethodLabel: json['payment_method_label'] as String?,
-      paymentProof: json['payment_proof'] as String?,
+      paymentProof: AppConfig.imageUrl(json['payment_proof'] as String?),
       shippingAddress: json['shipping_address'] as String?,
       notes: json['notes'] as String?,
       items: detail ? itemsList : null,
@@ -112,7 +114,7 @@ class OrderItem {
       id: json['id'] as int,
       productId: json['product_id'] as int,
       productName: json['product_name'] as String?,
-      productImage: json['product_image'] as String?,
+      productImage: AppConfig.imageUrl(json['product_image'] as String?),
       price: json['price'] as int? ?? 0,
       quantity: json['quantity'] as int? ?? 0,
       subtotal: json['subtotal'] as int? ?? 0,

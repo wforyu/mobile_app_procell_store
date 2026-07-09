@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
+import 'helpers/theme.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,16 +19,9 @@ class ProcellApp extends StatelessWidget {
     return MaterialApp(
       title: 'ProCell Store',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1A73E8),
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-      ),
-      home: ApiService().hasToken
-          ? const HomeScreen()
-          : const LoginScreen(),
+      theme: AppTheme.light,
+      navigatorKey: navigatorKey,
+      home: const SplashScreen(),
     );
   }
 }

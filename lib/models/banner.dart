@@ -1,3 +1,5 @@
+import '../config.dart';
+
 class BannerModel {
   final int id;
   final String? title;
@@ -20,7 +22,7 @@ class BannerModel {
       id: json['id'] as int,
       title: json['title'] as String?,
       link: json['link'] as String?,
-      image: json['image'] as String?,
+      image: AppConfig.imageUrl(json['image'] as String?),
       type: json['type'] as String?,
       sortOrder: json['sort_order'] as int? ?? 0,
     );

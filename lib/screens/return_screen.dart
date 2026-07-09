@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
+import '../helpers/theme.dart';
 
 class ReturnScreen extends StatefulWidget {
   final int orderId;
@@ -85,7 +86,7 @@ class _ReturnScreenState extends State<ReturnScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ajukan Retur'),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(

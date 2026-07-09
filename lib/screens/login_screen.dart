@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
-import 'register_screen.dart';
+import '../helpers/theme.dart';
 import 'home_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -31,8 +32,12 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await AuthService().login(_emailC.text.trim(), _passC.text);
       if (!mounted) return;
-      Navigator.pushReplacement(
-          context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context, true);
+      } else {
+        Navigator.pushReplacement(
+            context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -57,21 +62,51 @@ class _LoginScreenState extends State<LoginScreen> {
               key: _formKey,
               child: Column(
                 children: [
-                  const Icon(Icons.phone_android,
-                      size: 64, color: Color(0xFF1A73E8)),
-                  const SizedBox(height: 8),
-                  const Text('ProCell Store',
-                      style: TextStyle(
-                          fontSize: 24, fontWeight: FontWeight.bold)),
+                  // "PC" badge — logo like website
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppColors.gradientStart, AppColors.gradientEnd],
+                      ),
+                      borderRadius: BorderRadius.all(Radius.circular(16)),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text('PC',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 12),
+                  // Brand text
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('ProCell',
+                          style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary)),
+                      const Text('Store',
+                          style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary)),
+                    ],
+                  ),
                   const SizedBox(height: 4),
                   Text('Masuk ke akun Anda',
-                      style: TextStyle(color: Colors.grey[600])),
+                      style: TextStyle(
+                          fontSize: 14, color: AppColors.textSecondary)),
                   const SizedBox(height: 32),
                   TextFormField(
                     controller: _emailC,
                     decoration: const InputDecoration(
                       labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined),
+                      prefixIcon: Icon(Icons.email_outlined,
+                          color: AppColors.textHint),
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.emailAddress,
@@ -84,12 +119,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     obscureText: _obscure,
                     decoration: InputDecoration(
                       labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outlined),
+                      prefixIcon: const Icon(Icons.lock_outlined,
+                          color: AppColors.textHint),
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(_obscure
                             ? Icons.visibility_off
-                            : Icons.visibility),
+                            : Icons.visibility,
+                            color: AppColors.textHint),
                         onPressed: () =>
                             setState(() => _obscure = !_obscure),
                       ),
@@ -104,8 +141,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: ElevatedButton(
                       onPressed: _loading ? null : _login,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1A73E8),
+                        backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       child: _loading
                           ? const SizedBox(
@@ -113,14 +153,23 @@ class _LoginScreenState extends State<LoginScreen> {
                               width: 20,
                               child: CircularProgressIndicator(
                                   strokeWidth: 2, color: Colors.white))
-                          : const Text('Masuk', style: TextStyle(fontSize: 16)),
+                          : const Text('Masuk',
+                              style: TextStyle(fontSize: 16)),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextButton(
-                    onPressed: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const RegisterScreen())),
-                    child: const Text("Belum punya akun? Daftar"),
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const RegisterScreen())),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                    ),
+                    child: const Text(
+                      "Belum punya akun? Daftar",
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),

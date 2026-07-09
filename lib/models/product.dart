@@ -1,3 +1,5 @@
+import '../config.dart';
+
 class Product {
   final int id;
   final String name;
@@ -58,14 +60,20 @@ class Product {
       hasDiscount: json['has_discount'] as bool? ?? false,
       discountPercent: json['discount_percent'] as int?,
       stock: json['stock'] as int? ?? 0,
-      image: json['image'] as String?,
+      image: AppConfig.imageUrl(json['image'] as String?),
       rating: (json['rating'] as num?)?.toDouble() ?? 0,
       reviewCount: json['review_count'] as int? ?? 0,
       description: json['description'] as String?,
       sku: json['sku'] as String?,
       weight: json['weight'] as int?,
       images: json['images'] != null
-          ? List<Map<String, dynamic>>.from(json['images'])
+          ? (json['images'] as List).map((img) {
+              final m = Map<String, dynamic>.from(img);
+              if (m['url'] != null) {
+                m['url'] = AppConfig.imageUrl(m['url']);
+              }
+              return m;
+            }).toList()
           : null,
       reviews: json['reviews'] != null
           ? List<Map<String, dynamic>>.from(json['reviews'])

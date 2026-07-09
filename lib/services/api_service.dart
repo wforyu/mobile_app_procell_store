@@ -124,6 +124,105 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  // ── Search ──
+  Future<List<Map<String, dynamic>>> searchSuggestions(String query) async {
+    final res = await get('/search?q=$query');
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  // ── Compare ──
+  Future<List<Map<String, dynamic>>> getCompare(List<int> ids) async {
+    final idsStr = ids.join(',');
+    final res = await get('/compare?ids=$idsStr');
+    if (res is List) {
+      return res.cast<Map<String, dynamic>>();
+    }
+    if (res is Map && res.containsKey('data')) {
+      return (res['data'] as List).cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  // ── Pages ──
+  Future<Map<String, dynamic>> getPage(String slug) async {
+    return await get('/pages/$slug') as Map<String, dynamic>;
+  }
+
+  // ── Bundles ──
+  Future<List<Map<String, dynamic>>> getBundles() async {
+    final res = await get('/bundles');
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> getBundleDetail(int id) async {
+    return await get('/bundles/$id') as Map<String, dynamic>;
+  }
+
+  // ── Restock ──
+  Future<Map<String, dynamic>> requestRestock(int productId, String email, {String? phone}) async {
+    return await post('/restock', body: {
+      'product_id': productId,
+      'email': email,
+      'phone': ?phone,
+    }) as Map<String, dynamic>;
+  }
+
+  // ── Quick Buy ──
+  Future<Map<String, dynamic>> quickBuy(int productId) async {
+    return await post('/products/$productId/quick-buy') as Map<String, dynamic>;
+  }
+
+  // ── Chat ──
+  Future<List<Map<String, dynamic>>> getChatConversations() async {
+    final res = await get('/chat');
+    return (res['conversations'] as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> startChat(String message, {String? subject}) async {
+    return await post('/chat', body: {
+      'message': message,
+      'subject': ?subject,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getChatMessages(int conversationId) async {
+    return await get('/chat/$conversationId') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> sendChatMessage(int conversationId, String message) async {
+    return await post('/chat/$conversationId/send', body: {
+      'message': message,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> pollChatMessages(int conversationId, {String? since}) async {
+    String url = '/chat/$conversationId/poll';
+    if (since != null) url += '?since=$since';
+    return await get(url) as Map<String, dynamic>;
+  }
+
+  // ── Cart add bundle ──
+  Future<Map<String, dynamic>> addBundleToCart(int bundleId) async {
+    return await post('/cart/add-bundle/$bundleId') as Map<String, dynamic>;
+  }
+
+  // ── Coupon apply/remove ──
+  Future<Map<String, dynamic>> applyCoupon(String code, int cartTotal) async {
+    return await post('/coupon/apply', body: {
+      'code': code,
+      'cart_total': cartTotal,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<void> removeCoupon() async {
+    await post('/coupon/remove');
+  }
+
+  // ── Category by slug ──
+  Future<Map<String, dynamic>> getCategoryBySlug(String slug) async {
+    return await get('/categories/$slug') as Map<String, dynamic>;
+  }
+
   dynamic _handleResponse(http.Response response) {
     if (response.statusCode == 401) {
       clearToken();

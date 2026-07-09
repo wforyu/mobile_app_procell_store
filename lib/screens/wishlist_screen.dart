@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
+import '../helpers/theme.dart';
 import '../widgets/product_card.dart';
 import 'product_detail_screen.dart';
 
@@ -23,12 +24,24 @@ class _WishlistScreenState extends State<WishlistScreen> {
   }
 
   Future<void> _loadWishlist() async {
+    if (!_api.hasToken) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     setState(() => _loading = true);
     try {
       final res = await _api.get('/wishlist');
       if (!mounted) return;
+      List<dynamic> raw;
+      if (res is List) {
+        raw = res;
+      } else if (res is Map && res.containsKey('data')) {
+        raw = res['data'] as List;
+      } else {
+        raw = [];
+      }
       setState(() {
-        _products = (res['data'] as List)
+        _products = raw
             .map((e) => Product.fromJson(e as Map<String, dynamic>))
             .toList();
         _loading = false;
@@ -44,7 +57,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Wishlist'),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
       body: _loading

@@ -41,7 +41,8 @@ class AuthService {
     await _api.clearToken();
   }
 
-  Future<void> updateProfile(Map<String, dynamic> data) async {
-    await _api.put('/profile', body: data);
+  Future<User> updateProfile(Map<String, dynamic> data) async {
+    final res = await _api.put('/profile', body: data);
+    return User.fromJson(res);
   }
 }

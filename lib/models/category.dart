@@ -1,3 +1,5 @@
+import '../config.dart';
+
 class Category {
   final int id;
   final String name;
@@ -23,7 +25,7 @@ class Category {
       name: json['name'] as String,
       slug: json['slug'] as String,
       description: json['description'] as String?,
-      image: json['image'] as String?,
+      image: AppConfig.imageUrl(json['image'] as String?),
       productCount: json['product_count'] as int? ?? 0,
       sortOrder: json['sort_order'] as int? ?? 0,
     );
