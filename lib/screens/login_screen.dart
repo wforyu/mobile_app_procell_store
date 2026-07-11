@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import '../helpers/theme.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -32,12 +33,11 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await AuthService().login(_emailC.text.trim(), _passC.text);
       if (!mounted) return;
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context, true);
-      } else {
-        Navigator.pushReplacement(
-            context, MaterialPageRoute(builder: (_) => const HomeScreen()));
-      }
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (_) => false,
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -134,7 +134,25 @@ class _LoginScreenState extends State<LoginScreen> {
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Password wajib diisi' : null,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ForgotPasswordScreen())),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Lupa Password?',
+                          style: TextStyle(fontSize: 13)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     height: 48,

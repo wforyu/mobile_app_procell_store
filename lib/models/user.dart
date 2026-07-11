@@ -16,6 +16,9 @@ class User {
   final int? membershipDiscount;
   final int? pointsMultiplier;
   final String? badgeColor;
+  final String? addressType;
+  final int? cityId;
+  final String? cityName;
 
   User({
     required this.id,
@@ -33,6 +36,9 @@ class User {
     this.membershipDiscount,
     this.pointsMultiplier,
     this.badgeColor,
+    this.addressType,
+    this.cityId,
+    this.cityName,
   });
 
   factory User.fromJson(Map<String, dynamic> json, {String? token}) {
@@ -55,6 +61,9 @@ class User {
       membershipDiscount: tier?['discount_percent'] as int?,
       pointsMultiplier: tier?['points_multiplier'] as int?,
       badgeColor: tier?['badge_color'] as String?,
+      addressType: customer?['address_type'] as String?,
+      cityId: customer?['city_id'] as int?,
+      cityName: customer?['city_name'] as String?,
     );
   }
 }

@@ -43,12 +43,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         phone: _phoneC.text.trim().isEmpty ? null : _phoneC.text.trim(),
       );
       if (!mounted) return;
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context, true);
-      } else {
-        Navigator.pushReplacement(
-            context, MaterialPageRoute(builder: (_) => const HomeScreen()));
-      }
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (_) => false,
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)

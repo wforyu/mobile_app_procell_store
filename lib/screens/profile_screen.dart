@@ -10,6 +10,7 @@ import 'wishlist_screen.dart';
 import 'chat_list_screen.dart';
 import 'page_screen.dart';
 import 'bundles_screen.dart';
+import 'loyalty_points_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,8 +31,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _phoneC = TextEditingController();
   final _addressC = TextEditingController();
 
+  String? _addressType;
+  int? _cityId;
+  String? _cityName;
+  List<dynamic> _allCities = [];
+  bool _loadingCities = false;
+
   int _orderCount = 0;
   int _wishlistCount = 0;
+  int _pointsBalance = 0;
 
   @override
   void initState() {
@@ -66,18 +74,242 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final wishlistList = (wishlistRes is List)
           ? wishlistRes
           : (wishlistRes['data'] as List? ?? []);
+      int pts = 0;
+      try {
+        final ptsRes = await _api.get('/loyalty/balance');
+        pts = ptsRes['balance'] as int? ?? 0;
+      } catch (_) {}
+      if (!mounted) return;
       setState(() {
         _user = user;
         _nameC.text = user.name;
         _phoneC.text = user.phone ?? '';
         _addressC.text = user.address ?? '';
+        _addressType = user.addressType;
+        _cityId = user.cityId;
+        _cityName = user.cityName;
         _orderCount = orderList.length;
         _wishlistCount = wishlistList.length;
+        _pointsBalance = pts;
         _loading = false;
       });
+      _loadCities();
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadCities() async {
+    try {
+      final res = await _api.get('/cities');
+      if (!mounted) return;
+      setState(() {
+        _allCities = (res['cities'] as List?) ?? [];
+        _loadingCities = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingCities = false);
+    }
+  }
+
+  Future<void> _showCityPicker() async {
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => _CityPickerDialog(
+        cities: _allCities,
+        selectedCityId: _cityId,
+      ),
+    );
+    if (selected != null && mounted) {
+      setState(() {
+        _cityId = selected['id'] as int;
+        _cityName = selected['name'] as String;
+      });
+    }
+  }
+
+  Future<void> _showChangePassword() async {
+    final currentC = TextEditingController();
+    final newC = TextEditingController();
+    final confirmC = TextEditingController();
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    bool saving = false;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Ubah Password'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: currentC,
+                  obscureText: obscureCurrent,
+                  decoration: InputDecoration(
+                    labelText: 'Password Saat Ini',
+                    prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscureCurrent ? Icons.visibility_off : Icons.visibility, size: 20),
+                      onPressed: () => setDialogState(() => obscureCurrent = !obscureCurrent),
+                    ),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: newC,
+                  obscureText: obscureNew,
+                  decoration: InputDecoration(
+                    labelText: 'Password Baru',
+                    prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscureNew ? Icons.visibility_off : Icons.visibility, size: 20),
+                      onPressed: () => setDialogState(() => obscureNew = !obscureNew),
+                    ),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmC,
+                  obscureText: obscureConfirm,
+                  decoration: InputDecoration(
+                    labelText: 'Konfirmasi Password',
+                    prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscureConfirm ? Icons.visibility_off : Icons.visibility, size: 20),
+                      onPressed: () => setDialogState(() => obscureConfirm = !obscureConfirm),
+                    ),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            ElevatedButton(
+              onPressed: saving ? null : () async {
+                if (currentC.text.isEmpty || newC.text.length < 8 || newC.text != confirmC.text) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Password baru minimal 8 karakter dan harus cocok')),
+                  );
+                  return;
+                }
+                setDialogState(() => saving = true);
+                try {
+                  await _auth.updatePassword(currentC.text, newC.text, confirmC.text);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password berhasil diubah')));
+                  }
+                  Navigator.pop(ctx, true);
+                } on ApiException catch (e) {
+                  setDialogState(() => saving = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                  }
+                } catch (e) {
+                  setDialogState(() => saving = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e')));
+                  }
+                }
+              },
+              child: saving
+                  ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Simpan'),
+            ),
+          ],
+        ),
+      ),
+    );
+    currentC.dispose();
+    newC.dispose();
+    confirmC.dispose();
+  }
+
+  Future<void> _showDeleteAccount() async {
+    final passC = TextEditingController();
+    bool saving = false;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 48),
+          title: const Text('Hapus Akun?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Tindakan ini tidak dapat dibatalkan. Semua data Anda akan dihapus permanen.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passC,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Masukkan Password',
+                  prefixIcon: Icon(Icons.lock_outline, size: 20),
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+            ElevatedButton(
+              onPressed: saving ? null : () async {
+                if (passC.text.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Password wajib diisi')),
+                  );
+                  return;
+                }
+                setDialogState(() => saving = true);
+                try {
+                  await _auth.deleteAccount(passC.text);
+                  Navigator.pop(ctx, true);
+                } on ApiException catch (e) {
+                  setDialogState(() => saving = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                  }
+                } catch (e) {
+                  setDialogState(() => saving = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e')));
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+              child: saving
+                  ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Hapus Akun'),
+            ),
+          ],
+        ),
+      ),
+    );
+    passC.dispose();
+
+    if (confirm == true && mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
     }
   }
 
@@ -89,6 +321,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'name': _nameC.text.trim(),
         'phone': _phoneC.text.trim().isEmpty ? null : _phoneC.text.trim(),
         'address': _addressC.text.trim().isEmpty ? null : _addressC.text.trim(),
+        'address_type': _addressType,
+        'city_id': _cityId,
+        'city_name': _cityName,
       });
       if (!mounted) return;
       setState(() {
@@ -281,7 +516,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(width: 8),
                     Expanded(child: _statCard(Icons.money, 'Total Belanja', u.totalSpentFormatted ?? 'Rp0')),
                     const SizedBox(width: 8),
-                    Expanded(child: _statCard(Icons.stars_rounded, 'Poin', '0')),
+                    Expanded(child: _statCard(Icons.stars_rounded, 'Poin', _pointsBalance.toString())),
                   ],
                 ),
               ),
@@ -338,6 +573,68 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         maxLines: 2,
                       ),
+                      const SizedBox(height: 12),
+                      // Address type
+                      const Text('Tipe Alamat', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: RadioListTile<String>(
+                              title: const Text('Rumah', style: TextStyle(fontSize: 14)),
+                              value: 'home',
+                              groupValue: _addressType,
+                              onChanged: (v) => setState(() => _addressType = v),
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                          Flexible(
+                            child: RadioListTile<String>(
+                              title: const Text('Kantor', style: TextStyle(fontSize: 14)),
+                              value: 'office',
+                              groupValue: _addressType,
+                              onChanged: (v) => setState(() => _addressType = v),
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // City picker
+                      const Text('Kota', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 4),
+                      InkWell(
+                        onTap: _showCityPicker,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[400]!),
+                            borderRadius: BorderRadius.circular(12),
+                            color: Colors.grey[50],
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.location_city_outlined, size: 20, color: Colors.grey),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _cityName ?? 'Pilih kota',
+                                  style: TextStyle(
+                                    color: _cityName != null ? Colors.black : Colors.grey,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                            ],
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 16),
                       SizedBox(
                         width: double.infinity,
@@ -367,6 +664,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _menuItem(Icons.favorite_outline, 'Wishlist', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WishlistScreen())), badge: _wishlistCount.toString()),
                     _menuItem(Icons.local_activity, 'Paket Bundling', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BundlesScreen()))),
                     _menuItem(Icons.chat_outlined, 'Pusat Bantuan', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatListScreen()))),
+                    _menuItem(Icons.lock_outline, 'Ubah Password', _showChangePassword),
+                    _menuItem(Icons.stars_rounded, 'Riwayat Poin', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LoyaltyPointsScreen())), badge: _pointsBalance.toString()),
                   ]),
                 ),
                 const SizedBox(height: 12),
@@ -378,7 +677,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _menuItem(Icons.privacy_tip_outlined, 'Kebijakan Privasi', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PageScreen(slug: 'kebijakan-privasi')))),
                   ]),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SizedBox(
@@ -391,6 +690,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         side: const BorderSide(color: Colors.red),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _showDeleteAccount,
+                      icon: const Icon(Icons.delete_forever_outlined, color: Colors.red),
+                      label: const Text('Hapus Akun', style: TextStyle(color: Colors.red, fontSize: 13)),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Colors.red.withValues(alpha: 0.4)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
                   ),
@@ -463,6 +779,95 @@ class _ProfileScreenState extends State<ProfileScreen> {
             )
           : const Icon(Icons.chevron_right, color: AppColors.textHint),
       onTap: onTap,
+    );
+  }
+}
+
+class _CityPickerDialog extends StatefulWidget {
+  final List<dynamic> cities;
+  final int? selectedCityId;
+
+  const _CityPickerDialog({required this.cities, this.selectedCityId});
+
+  @override
+  State<_CityPickerDialog> createState() => _CityPickerDialogState();
+}
+
+class _CityPickerDialogState extends State<_CityPickerDialog> {
+  late TextEditingController _searchC;
+  late List<dynamic> _filtered;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchC = TextEditingController();
+    _filtered = List.from(widget.cities);
+  }
+
+  @override
+  void dispose() {
+    _searchC.dispose();
+    super.dispose();
+  }
+
+  void _onSearch(String v) {
+    setState(() {
+      _filtered = widget.cities.where((c) {
+        final name = (c['name'] as String?)?.toLowerCase() ?? '';
+        final province = (c['province'] as String?)?.toLowerCase() ?? '';
+        final q = v.toLowerCase();
+        return name.contains(q) || province.contains(q);
+      }).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Pilih Kota'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _searchC,
+              decoration: const InputDecoration(
+                hintText: 'Cari kota...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: _onSearch,
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _filtered.length,
+                itemBuilder: (_, i) {
+                  final c = _filtered[i];
+                  return ListTile(
+                    dense: true,
+                    title: Text('${c['name']} (${c['province']})'),
+                    selected: c['id'] == widget.selectedCityId,
+                    onTap: () => Navigator.pop(
+                      context,
+                      {'id': c['id'] as int, 'name': c['name'] as String},
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+      ],
     );
   }
 }

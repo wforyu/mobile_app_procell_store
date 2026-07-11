@@ -171,80 +171,53 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 )
               : RefreshIndicator(
                   onRefresh: _loadConversations,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _conversations.length,
-                    itemBuilder: (_, i) {
-                      final c = _conversations[i];
-                      final isOpen = c['status'] == 'open' || c['status'] == 'aktif';
-                      final subject = c['subject'] as String?;
-                      final displayTitle = subject != null && subject.isNotEmpty
-                          ? subject
-                          : 'Percakapan #${c['id']}';
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  ChatDetailScreen(conversationId: c['id'] as int),
-                            ),
-                          ).then((_) => _loadConversations()),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(displayTitle,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold),
-                                          overflow: TextOverflow.ellipsis),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: (isOpen ? Colors.green : Colors.red)
-                                            .withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        isOpen ? 'Terbuka' : 'Ditutup',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color:
-                                              isOpen ? Colors.green : Colors.red,
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(12, 12, 12, 12),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, i) {
+                              final c = _conversations[i];
+                              final isOpen = c['status'] == 'open' || c['status'] == 'aktif';
+                              final subject = c['subject'] as String?;
+                              final displayTitle = subject != null && subject.isNotEmpty ? subject : 'Percakapan #${c['id']}';
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatDetailScreen(conversationId: c['id'] as int))).then((_) => _loadConversations()),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Expanded(child: Text(displayTitle, style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              decoration: BoxDecoration(color: (isOpen ? Colors.green : Colors.red).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+                                              child: Text(isOpen ? 'Terbuka' : 'Ditutup', style: TextStyle(fontSize: 11, color: isOpen ? Colors.green : Colors.red)),
+                                            ),
+                                          ],
                                         ),
-                                      ),
+                                        const SizedBox(height: 8),
+                                        Text(_latestPreview(c), style: TextStyle(color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                        const SizedBox(height: 4),
+                                        Text(_timestamp(c), style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _latestPreview(c),
-                                  style: TextStyle(color: Colors.grey[600]),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _timestamp(c),
-                                  style: TextStyle(
-                                      fontSize: 12, color: Colors.grey[400]),
-                                ),
-                              ],
-                            ),
+                              );
+                            },
+                            childCount: _conversations.length,
                           ),
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
                 ),
     );

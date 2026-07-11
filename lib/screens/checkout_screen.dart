@@ -28,9 +28,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int _pointsBalance = 0;
   int _maxRedeemPoints = 0;
 
+  // Profile auto-fill
+  String? _profileAddress;
+  int? _profileCityId;
+  String? _profileCityName;
+  String? _profileAddressType;
+  bool _profileLoaded = false;
+
   // Selected values
   final _addressC = TextEditingController();
   int? _selectedCityId;
+  String? _selectedCityName;
   String? _selectedCourier;
   String? _selectedService;
   int _shippingCost = 0;
@@ -81,6 +89,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final res = await _api.get('/checkout');
       if (!mounted) return;
+
+      // Profile auto-fill
+      final profile = res['profile'] as Map<String, dynamic>?;
+      final profileAddress = profile?['address'] as String? ?? '';
+      final profileCityId = profile?['city_id'] as int?;
+      final profileCityName = profile?['city_name'] as String?;
+      final profileAddressType = profile?['address_type'] as String?;
+
       setState(() {
         _bankAccounts = (res['bank_accounts'] as List?) ?? [];
         _cities = (res['cities'] as List?) ?? [];
@@ -89,8 +105,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _cartTotal = (res['cart']['total'] as int?) ?? 0;
         _pointsBalance = res['points_balance'] as int? ?? 0;
         _maxRedeemPoints = res['max_redeem_points'] as int? ?? 0;
+
+        _profileAddress = profileAddress;
+        _profileCityId = profileCityId;
+        _profileCityName = profileCityName;
+        _profileAddressType = profileAddressType;
+        _profileLoaded = true;
+
+        _addressC.text = profileAddress;
+        _selectedCityId = profileCityId;
+        _selectedCityName = profileCityName;
+
         _loading = false;
       });
+
+      if (profileCityId != null) {
+        _loadRates();
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -142,6 +173,79 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _appliedCouponCode = null;
       _couponC.clear();
     });
+  }
+
+  Future<void> _showCityPicker() async {
+    final TextEditingController searchC = TextEditingController();
+    List<dynamic> filtered = List.from(_cities);
+
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Pilih Kota'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: searchC,
+                      decoration: const InputDecoration(
+                        hintText: 'Cari kota...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      autofocus: true,
+                      onChanged: (v) {
+                        setDialogState(() {
+                          filtered = _cities.where((c) {
+                            final name = (c['name'] as String?)?.toLowerCase() ?? '';
+                            final province = (c['province'] as String?)?.toLowerCase() ?? '';
+                            final q = v.toLowerCase();
+                            return name.contains(q) || province.contains(q);
+                          }).toList();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: filtered.map((c) => ListTile(
+                          dense: true,
+                          title: Text('${c['name']} (${c['province']})'),
+                          selected: c['id'] == _selectedCityId,
+                          onTap: () => Navigator.pop(ctx, { 'id': c['id'] as int, 'name': c['name'] as String }),
+                        )).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (selected != null && mounted) {
+      setState(() {
+        _selectedCityId = selected['id'] as int;
+        _selectedCityName = selected['name'] as String;
+        _selectedCourier = null;
+        _selectedService = null;
+        _shippingCost = 0;
+        _availableServices = null;
+      });
+      _loadRates();
+    }
+    searchC.dispose();
   }
 
   Future<void> _loadRates() async {
@@ -214,6 +318,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'coupon_code': _couponC.text.trim().isEmpty ? null : _couponC.text.trim(),
         'points_to_use': _usePoints ? _pointsToUse : 0,
         'notes': null,
+        'city_name': _selectedCityName,
+        'address_type': _profileAddressType,
       });
       if (!mounted) return;
       final order = res['order'] as Map<String, dynamic>;
@@ -272,12 +378,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+      body: SafeArea(
+        child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Alamat Pengiriman', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                const Text('Alamat Pengiriman', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                if (_profileAddressType != null)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _profileAddressType == 'home' ? Colors.blue[50] : Colors.orange[50],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _profileAddressType == 'home' ? 'Rumah' : 'Kantor',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: _profileAddressType == 'home' ? Colors.blue[700] : Colors.orange[700],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             TextFormField(
               controller: _addressC,
@@ -290,20 +418,38 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 16),
             const Text('Kota Tujuan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              initialValue: _selectedCityId,
-              isExpanded: true,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              hint: const Text('Pilih kota'),
-              items: _cities.map((c) => DropdownMenuItem(
-                value: c['id'] as int,
-                child: Text('${c['name']} (${c['province']})', style: const TextStyle(fontSize: 13)),
-              )).toList(),
-              onChanged: (v) {
-                setState(() => _selectedCityId = v);
-                _loadRates();
-              },
+            InkWell(
+              onTap: _showCityPicker,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[400]!),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_city_outlined, size: 20, color: Colors.grey),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _selectedCityName ?? 'Pilih kota',
+                        style: TextStyle(
+                          color: _selectedCityName != null ? Colors.black : Colors.grey,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    const Icon(Icons.search, size: 18, color: Colors.grey),
+                  ],
+                ),
+              ),
             ),
+            if (_selectedCityName != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(_selectedCityName!, style: const TextStyle(fontSize: 12, color: Colors.green)),
+              ),
             const SizedBox(height: 16),
             const Text('Kurir', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -505,6 +651,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 32),
           ],
         ),
+      ),
       ),
     );
   }

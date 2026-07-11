@@ -52,6 +52,13 @@ class Order {
     this.returns,
   });
 
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
   factory Order.fromJson(Map<String, dynamic> json, {bool detail = false}) {
     final itemsList = <OrderItem>[];
     if (json['items'] != null) {
@@ -60,23 +67,23 @@ class Order {
       }
     }
     return Order(
-      id: json['id'] as int,
-      orderNumber: json['order_number'] as String,
-      status: json['status'] as String,
-      statusLabel: json['status_label'] as String? ?? json['status'] as String,
-      totalAmount: json['total_amount'] as int? ?? 0,
-      shippingCost: json['shipping_cost'] as int? ?? 0,
-      discountAmount: json['discount_amount'] as int? ?? 0,
-      pointsDiscount: json['points_discount'] as int? ?? 0,
-      grandTotal: json['grand_total'] as int? ?? 0,
+      id: _toInt(json['id']),
+      orderNumber: json['order_number'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      statusLabel: json['status_label'] as String? ?? (json['status'] as String? ?? ''),
+      totalAmount: _toInt(json['total_amount']),
+      shippingCost: _toInt(json['shipping_cost']),
+      discountAmount: _toInt(json['discount_amount']),
+      pointsDiscount: _toInt(json['points_discount']),
+      grandTotal: _toInt(json['grand_total']),
       grandTotalFormatted:
           json['grand_total_formatted'] as String? ?? 'Rp 0',
       courier: json['courier'] as String?,
       courierService: json['courier_service'] as String?,
       trackingNumber: json['tracking_number'] as String?,
-      itemCount: json['item_count'] as int? ?? 0,
+      itemCount: _toInt(json['item_count']),
       createdAt: json['created_at'] as String? ?? '',
-      pointsEarned: json['points_earned'] as int?,
+      pointsEarned: json['points_earned'] != null ? _toInt(json['points_earned']) : null,
       paymentMethod: json['payment_method'] as String?,
       paymentMethodLabel: json['payment_method_label'] as String?,
       paymentProof: AppConfig.imageUrl(json['payment_proof'] as String?),
@@ -111,13 +118,13 @@ class OrderItem {
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
     return OrderItem(
-      id: json['id'] as int,
-      productId: json['product_id'] as int,
+      id: Order._toInt(json['id']),
+      productId: Order._toInt(json['product_id']),
       productName: json['product_name'] as String?,
       productImage: AppConfig.imageUrl(json['product_image'] as String?),
-      price: json['price'] as int? ?? 0,
-      quantity: json['quantity'] as int? ?? 0,
-      subtotal: json['subtotal'] as int? ?? 0,
+      price: Order._toInt(json['price']),
+      quantity: Order._toInt(json['quantity']),
+      subtotal: Order._toInt(json['subtotal']),
     );
   }
 }

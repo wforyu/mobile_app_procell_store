@@ -141,10 +141,18 @@ class _BundlesScreenState extends State<BundlesScreen> {
 
     return RefreshIndicator(
       onRefresh: _loadBundles,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(12),
-        itemCount: _bundles.length,
-        itemBuilder: (_, i) => _buildBundleCard(_bundles[i]),
+      child: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(12, 12, 12, 12),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => _buildBundleCard(_bundles[i]),
+                childCount: _bundles.length,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

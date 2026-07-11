@@ -22,6 +22,7 @@ import 'bundles_screen.dart';
 import 'page_screen.dart';
 import 'chat_list_screen.dart';
 import 'compare_screen.dart';
+import 'notification_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,6 +33,23 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
+  int _notifCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    ProductDetailScreen.loadCompareIds();
+    _loadNotifCount();
+  }
+
+  Future<void> _loadNotifCount() async {
+    if (!ApiService().hasToken) return;
+    try {
+      final res = await ApiService().get('/notifications/unread-count');
+      if (!mounted) return;
+      setState(() => _notifCount = res['count'] as int? ?? 0);
+    } catch (_) {}
+  }
 
   void _onTabSelected(int i) {
     if (i == 0 || ApiService().hasToken) {
@@ -55,16 +73,33 @@ class _HomeScreenState extends State<HomeScreen> {
         const _HomeTab(),
         const OrdersScreen(),
         const WishlistScreen(),
+        const NotificationScreen(),
         const ProfileScreen(),
       ][_tab],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
-        onDestinationSelected: _onTabSelected,
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Beranda'),
-          NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'Pesanan'),
-          NavigationDestination(icon: Icon(Icons.favorite_outline), selectedIcon: Icon(Icons.favorite), label: 'Wishlist'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profil'),
+        onDestinationSelected: (i) {
+          _onTabSelected(i);
+          if (i == 3) _loadNotifCount();
+        },
+        destinations: [
+          const NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Beranda'),
+          const NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'Pesanan'),
+          const NavigationDestination(icon: Icon(Icons.favorite_outline), selectedIcon: Icon(Icons.favorite), label: 'Wishlist'),
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: _notifCount > 0,
+              label: Text('$_notifCount'),
+              child: const Icon(Icons.notifications_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: _notifCount > 0,
+              label: Text('$_notifCount'),
+              child: const Icon(Icons.notifications),
+            ),
+            label: 'Notifikasi',
+          ),
+          const NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profil'),
         ],
       ),
     );
@@ -82,6 +117,7 @@ class _HomeTabState extends State<_HomeTab> {
   final ApiService _api = ApiService();
   final AuthService _auth = AuthService();
   List<Product> _products = [];
+  List<Product> _flashSaleProducts = [];
   List<Category> _categories = [];
   List<BannerModel> _banners = [];
   bool _loading = true;
@@ -90,6 +126,7 @@ class _HomeTabState extends State<_HomeTab> {
   List<Product> _searchResults = [];
   bool _searching = false;
   String? _selectedCategorySlug;
+  String? _sortBy;
   int _currentPage = 1;
   bool _hasMore = true;
   bool _loadingMore = false;
@@ -98,6 +135,8 @@ class _HomeTabState extends State<_HomeTab> {
   List<Map<String, dynamic>> _suggestions = [];
   bool _showSuggestions = false;
   int _cartCount = 0;
+  Duration _flashCountdown = Duration.zero;
+  Timer? _flashTimer;
 
   @override
   void initState() {
@@ -107,12 +146,43 @@ class _HomeTabState extends State<_HomeTab> {
     _scrollC.addListener(_onScroll);
   }
 
+  void _startFlashCountdown() {
+    _flashTimer?.cancel();
+    if (_flashSaleProducts.isEmpty) return;
+    DateTime? nearestEnd;
+    for (final p in _flashSaleProducts) {
+      if (p.flashSaleEnd != null) {
+        final dt = DateTime.tryParse(p.flashSaleEnd!);
+        if (dt != null && (nearestEnd == null || dt.isBefore(nearestEnd))) {
+          nearestEnd = dt;
+        }
+      }
+    }
+    if (nearestEnd == null) return;
+    _updateCountdown(nearestEnd);
+    _flashTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) { _flashTimer?.cancel(); return; }
+      _updateCountdown(nearestEnd!);
+    });
+  }
+
+  void _updateCountdown(DateTime end) {
+    final remaining = end.difference(DateTime.now());
+    if (remaining.isNegative) {
+      _flashTimer?.cancel();
+      if (mounted) setState(() => _flashCountdown = Duration.zero);
+      return;
+    }
+    if (mounted) setState(() => _flashCountdown = remaining);
+  }
+
   @override
   void dispose() {
     _searchC.dispose();
     _scrollC.removeListener(_onScroll);
     _scrollC.dispose();
     _debounce?.cancel();
+    _flashTimer?.cancel();
     super.dispose();
   }
 
@@ -130,17 +200,22 @@ class _HomeTabState extends State<_HomeTab> {
       _error = null;
     });
     try {
-      final prodFuture = _selectedCategorySlug != null
-          ? _api.get('/products?category=$_selectedCategorySlug')
-          : _api.get('/products');
+      var prodEndpoint = '/products';
+      final params = <String>[];
+      if (_selectedCategorySlug != null) params.add('category=$_selectedCategorySlug');
+      if (_sortBy != null) params.add('sort=$_sortBy');
+      if (params.isNotEmpty) prodEndpoint += '?${params.join('&')}';
+      final prodFuture = _api.get(prodEndpoint);
       final results = await Future.wait([
         prodFuture,
         _api.get('/categories'),
         _api.get('/banners'),
+        _api.get('/products/flash-sale'),
       ]);
       if (!mounted) return;
       final prodData = results[0] as Map<String, dynamic>;
       final meta = prodData['meta'] as Map<String, dynamic>;
+      final flashSaleData = results[3] as Map<String, dynamic>;
       setState(() {
         _products = (prodData['data'] as List)
             .map((e) => Product.fromJson(e as Map<String, dynamic>))
@@ -152,6 +227,10 @@ class _HomeTabState extends State<_HomeTab> {
         _banners = (results[2] as List)
             .map((e) => BannerModel.fromJson(e as Map<String, dynamic>))
             .toList();
+        _flashSaleProducts = (flashSaleData['data'] as List)
+            .map((e) => Product.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _startFlashCountdown();
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -174,10 +253,10 @@ class _HomeTabState extends State<_HomeTab> {
     setState(() => _loadingMore = true);
     try {
       final nextPage = _currentPage + 1;
-      var endpoint = '/products?page=$nextPage';
-      if (_selectedCategorySlug != null) {
-        endpoint += '&category=$_selectedCategorySlug';
-      }
+      final params = <String>['page=$nextPage'];
+      if (_selectedCategorySlug != null) params.add('category=$_selectedCategorySlug');
+      if (_sortBy != null) params.add('sort=$_sortBy');
+      final endpoint = '/products?${params.join('&')}';
       final res = await _api.get(endpoint);
       if (!mounted) return;
       final resMap = res as Map<String, dynamic>;
@@ -262,6 +341,27 @@ class _HomeTabState extends State<_HomeTab> {
                   style: TextStyle(fontSize: 13)),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _sortChip(String label, String? value) {
+    final selected = _sortBy == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label, style: TextStyle(fontSize: 12, color: selected ? Colors.white : AppColors.textSecondary)),
+        selected: selected,
+        onSelected: (_) {
+          setState(() => _sortBy = value);
+          _loadData();
+        },
+        selectedColor: AppColors.primary,
+        backgroundColor: Colors.white,
+        side: BorderSide(color: selected ? AppColors.primary : Colors.grey[300]!),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }
@@ -383,6 +483,34 @@ class _HomeTabState extends State<_HomeTab> {
         (_) => false);
   }
 
+  Widget _countdownChip(Duration d) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final hours = d.inHours;
+    final mins = d.inMinutes.remainder(60);
+    final secs = d.inSeconds.remainder(60);
+    String text;
+    if (d.inDays > 0) {
+      text = '${d.inDays}h ${twoDigits(hours)}:${twoDigits(mins)}:${twoDigits(secs)}';
+    } else {
+      text = '${twoDigits(hours)}:${twoDigits(mins)}:${twoDigits(secs)}';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.access_time, size: 13, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -489,7 +617,7 @@ class _HomeTabState extends State<_HomeTab> {
                 case 'bundles':
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const BundlesScreen()));
                 case 'about':
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PageScreen(slug: 'about')));
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PageScreen(slug: 'tentang-kami')));
                 case 'logout':
                   _logout();
               }
@@ -614,6 +742,20 @@ class _HomeTabState extends State<_HomeTab> {
                               ),
                             const SizedBox(height: 12),
                             SizedBox(
+                              height: 36,
+                              child: ListView(
+                                scrollDirection: Axis.horizontal,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                children: [
+                                  _sortChip('Terbaru', null),
+                                  _sortChip('Termurah', 'price_asc'),
+                                  _sortChip('Termahal', 'price_desc'),
+                                  _sortChip('Nama A-Z', 'name'),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            SizedBox(
                               height: 44,
                               child: ListView.separated(
                                 scrollDirection: Axis.horizontal,
@@ -664,7 +806,7 @@ class _HomeTabState extends State<_HomeTab> {
                                     MaterialPageRoute(
                                         builder: (_) => ProductDetailScreen(
                                             product:
-                                                _searchResults[index]))),
+                                                _searchResults[index]))).then((_) => _loadCartCount()),
                               ),
                               childCount: _searchResults.length,
                             ),
@@ -679,6 +821,121 @@ class _HomeTabState extends State<_HomeTab> {
                                 'title': b.title,
                                 'link': b.link,
                               }).toList(),
+                            ),
+                          ),
+                        SliverToBoxAdapter(
+                          child: Container(
+                            margin: const EdgeInsets.fromLTRB(12, 16, 12, 4),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFDC2626), Color(0xFF991B1B)],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.flash_on, color: Colors.white, size: 20),
+                                    const SizedBox(width: 6),
+                                    const Text('Flash Sale',
+                                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                                    if (_flashSaleProducts.isNotEmpty && _flashCountdown > Duration.zero) ...[
+                                      const SizedBox(width: 8),
+                                      _countdownChip(_flashCountdown),
+                                    ],
+                                    const Spacer(),
+                                    if (_flashSaleProducts.isNotEmpty)
+                                      Text('${_flashSaleProducts.length} produk',
+                                          style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                                  ],
+                                ),
+                                if (_flashSaleProducts.isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text('Belum ada produk flash sale. Nantikan promo spesial!',
+                                        style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (_flashSaleProducts.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: SizedBox(
+                              height: 230,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                itemCount: _flashSaleProducts.length,
+                                itemBuilder: (_, i) {
+                                  final p = _flashSaleProducts[i];
+                                  return Container(
+                                    width: 160,
+                                    margin: const EdgeInsets.only(right: 10),
+                                    child: Card(
+                                      clipBehavior: Clip.antiAlias,
+                                      child: InkWell(
+                                        onTap: () => Navigator.push(context, MaterialPageRoute(
+                                            builder: (_) => ProductDetailScreen(product: p))).then((_) => _loadCartCount()),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: Stack(
+                                                fit: StackFit.expand,
+                                                children: [
+                                                  if (p.image != null)
+                                                    CachedNetworkImage(imageUrl: p.image!, fit: BoxFit.cover)
+                                                  else
+                                                    Container(color: Colors.grey[200], child: const Icon(Icons.image)),
+                                                  if (p.discountPercent != null && p.discountPercent! > 0)
+                                                    Positioned(
+                                                      top: 4, left: 4,
+                                                      child: Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.red,
+                                                          borderRadius: BorderRadius.circular(4),
+                                                        ),
+                                                        child: Text('${p.discountPercent}%',
+                                                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            Padding(
+                                              padding: const EdgeInsets.all(8),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    children: [
+                                                      Text(p.effectivePriceFormatted,
+                                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.red)),
+                                                      if (p.hasDiscount) ...[
+                                                        const SizedBox(width: 4),
+                                                        Text(p.priceFormatted,
+                                                            style: TextStyle(fontSize: 10, color: Colors.grey[400], decoration: TextDecoration.lineThrough)),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         if (_categories.isNotEmpty) ...[
@@ -736,7 +993,7 @@ class _HomeTabState extends State<_HomeTab> {
                                     context,
                                     MaterialPageRoute(
                                         builder: (_) => ProductDetailScreen(
-                                            product: _products[index]))),
+                                            product: _products[index]))).then((_) => _loadCartCount()),
                               ),
                               childCount: _products.length,
                             ),

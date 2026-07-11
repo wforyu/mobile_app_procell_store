@@ -74,9 +74,9 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  Future<dynamic> delete(String endpoint) async {
+  Future<dynamic> delete(String endpoint, {Map<String, dynamic>? body}) async {
     final url = Uri.parse('${AppConfig.baseUrl}$endpoint');
-    final response = await http.delete(url, headers: _headers);
+    final response = await http.delete(url, headers: _headers, body: body != null ? jsonEncode(body) : null);
     return _handleResponse(response);
   }
 
@@ -163,7 +163,7 @@ class ApiService {
     return await post('/restock', body: {
       'product_id': productId,
       'email': email,
-      'phone': ?phone,
+      'phone': phone,
     }) as Map<String, dynamic>;
   }
 
@@ -181,7 +181,7 @@ class ApiService {
   Future<Map<String, dynamic>> startChat(String message, {String? subject}) async {
     return await post('/chat', body: {
       'message': message,
-      'subject': ?subject,
+      'subject': subject,
     }) as Map<String, dynamic>;
   }
 
@@ -216,6 +216,24 @@ class ApiService {
 
   Future<void> removeCoupon() async {
     await post('/coupon/remove');
+  }
+
+  // ── Frequently Bought Together ──
+  Future<List<Map<String, dynamic>>> getFrequentlyBoughtTogether(String slug) async {
+    final res = await get('/products/$slug/frequently-bought-together');
+    if (res is Map && res.containsKey('data')) {
+      return (res['data'] as List).cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  // ── Loyalty Points ──
+  Future<Map<String, dynamic>> getLoyaltyBalance() async {
+    return await get('/loyalty/balance') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getLoyaltyHistory({int page = 1}) async {
+    return await get('/loyalty/history?page=$page') as Map<String, dynamic>;
   }
 
   // ── Category by slug ──

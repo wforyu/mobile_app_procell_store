@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import 'compare_screen.dart';
@@ -13,6 +14,23 @@ class ProductDetailScreen extends StatefulWidget {
   const ProductDetailScreen({super.key, required this.product});
 
   static final List<int> compareIds = <int>[];
+  static bool _compareLoaded = false;
+
+  static Future<void> loadCompareIds() async {
+    if (_compareLoaded) return;
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList('compare_ids');
+    compareIds.clear();
+    if (ids != null) {
+      compareIds.addAll(ids.map(int.parse));
+    }
+    _compareLoaded = true;
+  }
+
+  static Future<void> _saveCompareIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('compare_ids', compareIds.map((id) => id.toString()).toList());
+  }
 
   @override
   State<ProductDetailScreen> createState() => _ProductDetailScreenState();
@@ -25,10 +43,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _qty = 1;
   int _currentImage = 0;
   bool _wishlisted = false;
+  List<Map<String, dynamic>> _frequentlyBought = [];
 
   @override
   void initState() {
     super.initState();
+    ProductDetailScreen.loadCompareIds();
     _loadDetail();
   }
 
@@ -40,6 +60,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         _product = Product.fromJson(res);
         _loading = false;
       });
+      _loadFrequentlyBought();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -47,6 +68,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _loadFrequentlyBought() async {
+    try {
+      final data = await _api.getFrequentlyBoughtTogether(widget.product.slug);
+      if (!mounted) return;
+      setState(() => _frequentlyBought = data);
+    } catch (_) {}
   }
 
   Future<void> _toggleWishlist() async {
@@ -165,6 +194,256 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
+  String _formatDate(String dateStr) {
+    try {
+      final dt = DateTime.parse(dateStr);
+      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
+  Widget _buildReviewSection(Product p) {
+    final reviews = p.reviews ?? [];
+
+    if (reviews.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            Icon(Icons.rate_review_outlined, size: 48, color: Colors.grey[300]),
+            const SizedBox(height: 12),
+            Text('Belum ada ulasan', style: TextStyle(color: Colors.grey[500], fontSize: 14)),
+            const SizedBox(height: 4),
+            Text('Jadilah yang pertama memberi ulasan', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+          ],
+        ),
+      );
+    }
+
+    double avgRating = (reviews.fold<int>(0, (sum, r) => sum + ((r['rating'] as int?) ?? 0))) / reviews.length;
+    Map<int, int> distribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
+    for (var r in reviews) {
+      int rating = (r['rating'] as int?) ?? 0;
+      if (rating >= 1 && rating <= 5) distribution[rating] = (distribution[rating] ?? 0) + 1;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Ulasan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Column(
+                children: [
+                  Text(avgRating.toStringAsFixed(1),
+                      style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.orange)),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(5, (i) => Icon(
+                      i < avgRating.round() ? Icons.star : Icons.star_border,
+                      size: 16, color: Colors.orange,
+                    )),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('${reviews.length} ulasan', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                ],
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: Column(
+                  children: List.generate(5, (i) {
+                    int star = 5 - i;
+                    int count = distribution[star] ?? 0;
+                    double pct = reviews.isEmpty ? 0 : count / reviews.length;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Text('$star', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                          const SizedBox(width: 4),
+                          Icon(Icons.star, size: 12, color: Colors.orange),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: pct,
+                                backgroundColor: Colors.orange.shade100,
+                                valueColor: const AlwaysStoppedAnimation(Colors.orange),
+                                minHeight: 6,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 24,
+                            child: Text('$count', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...reviews.map((r) => _buildReviewCard(r)),
+      ],
+    );
+  }
+
+  Widget _buildReviewCard(Map<String, dynamic> r) {
+    String name = r['user'] as String? ?? 'Anonymous';
+    int rating = (r['rating'] as int?) ?? 0;
+    String comment = r['comment'] as String? ?? '';
+    String date = r['created_at'] as String? ?? '';
+    return Card(
+      elevation: 0,
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                  child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          ...List.generate(5, (i) => Icon(
+                            i < rating ? Icons.star : Icons.star_border,
+                            size: 12, color: Colors.orange,
+                          )),
+                          const SizedBox(width: 8),
+                          Text(_formatDate(date), style: TextStyle(fontSize: 10, color: Colors.grey[400])),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (comment.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(comment, style: TextStyle(fontSize: 13, color: Colors.grey[800], height: 1.4)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFrequentlyBoughtSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.shopping_cart_outlined, size: 18, color: AppColors.primary),
+            SizedBox(width: 6),
+            Text('Sering Dibeli Bersamaan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 180,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _frequentlyBought.length,
+            itemBuilder: (_, i) {
+              final item = _frequentlyBought[i];
+              final name = item['name'] as String? ?? '';
+              final price = item['price'] as int? ?? 0;
+              final image = item['image'] as String?;
+              final slug = item['slug'] as String?;
+              final stock = item['stock'] as int? ?? 0;
+              return GestureDetector(
+                onTap: slug != null ? () async {
+                  try {
+                    final res = await _api.get('/products/$slug');
+                    if (!mounted) return;
+                    final prod = Product.fromJson(res as Map<String, dynamic>);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailScreen(product: prod)));
+                  } catch (_) {}
+                } : null,
+                child: Container(
+                  width: 140,
+                  margin: const EdgeInsets.only(right: 10),
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (image != null)
+                                CachedNetworkImage(imageUrl: image, fit: BoxFit.cover)
+                              else
+                                Container(color: Colors.grey[200], child: const Icon(Icons.image)),
+                              if (stock <= 0)
+                                Container(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  child: const Center(
+                                    child: Text('Habis', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(name, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 4),
+                              Text('Rp ${price.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = _product ?? widget.product;
@@ -180,11 +459,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               final pid = (_product ?? widget.product).id;
               if (ProductDetailScreen.compareIds.contains(pid)) {
                 ProductDetailScreen.compareIds.remove(pid);
+                ProductDetailScreen._saveCompareIds();
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dihapus dari perbandingan')));
               } else if (ProductDetailScreen.compareIds.length >= 4) {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Maksimal 4 produk')));
               } else {
                 ProductDetailScreen.compareIds.add(pid);
+                ProductDetailScreen._saveCompareIds();
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ditambahkan ke perbandingan')));
               }
               setState(() {});
@@ -306,6 +587,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                     fontSize: 22,
                                     fontWeight: FontWeight.bold,
                                     color: AppColors.primary)),
+                            if (p.isFlashSaleActive) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.flash_on, size: 14, color: Colors.white),
+                                    SizedBox(width: 2),
+                                    Text('FLASH SALE',
+                                        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -356,34 +656,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           Text(p.description!,
                               style: TextStyle(color: Colors.grey[700])),
                         ],
-                        if (p.reviews != null && p.reviews!.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        const Divider(height: 1),
+                        const SizedBox(height: 16),
+                        _buildReviewSection(p),
+                        if (_frequentlyBought.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          const Divider(height: 1),
                           const SizedBox(height: 16),
-                          const Text('Ulasan',
-                              style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          ...p.reviews!.map((r) => Card(
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    child: Text((r['user'] as String)[0]),
-                                  ),
-                                  title: Text(r['user'] as String),
-                                  subtitle: Text(r['comment'] as String? ?? ''),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: List.generate(
-                                      5,
-                                      (i) => Icon(
-                                        i < ((r['rating'] as int?) ?? 0)
-                                            ? Icons.star
-                                            : Icons.star_border,
-                                        size: 14,
-                                        color: Colors.orange,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              )),
+                          _buildFrequentlyBoughtSection(),
                         ],
                       ],
                     ),
