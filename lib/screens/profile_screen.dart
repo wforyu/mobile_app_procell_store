@@ -367,72 +367,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Future<void> _showServerSettings() async {
-    final serverC = TextEditingController(text: AppConfig.currentUrl);
-    bool saving = false;
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Pengaturan Server'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Masukkan URL API server. Kosongkan untuk pakai default.',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: serverC,
-                  decoration: const InputDecoration(
-                    labelText: 'API URL',
-                    hintText: 'https://xxxx.ngrok-free.app/api',
-                    prefixIcon: Icon(Icons.dns_outlined, size: 20),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Contoh:\n• Lokal: http://192.168.100.7:8000/api\n• Ngrok: https://abc.ngrok-free.app/api\n• VPS: https://tokoku.com/api',
-                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Batal'),
-            ),
-            ElevatedButton(
-              onPressed: saving ? null : () async {
-                setDialogState(() => saving = true);
-                await AppConfig.setBaseUrl(serverC.text.trim());
-                setDialogState(() => saving = false);
-                if (context.mounted) Navigator.pop(ctx, true);
-              },
-              child: saving
-                  ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Simpan'),
-            ),
-          ],
-        ),
-      ),
-    );
-    serverC.dispose();
-
-    if (result == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Server URL: ${AppConfig.baseUrl}')),
-      );
-    }
-  }
-
   Color _parseBadgeColor(String? color) {
     switch (color) {
       case 'gold':
@@ -739,7 +673,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: _menuSection('Info', [
-                    _menuItem(Icons.dns_outlined, 'Pengaturan Server', _showServerSettings),
                     _menuItem(Icons.store_outlined, 'Tentang Toko', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PageScreen(slug: 'tentang-kami')))),
                     _menuItem(Icons.description_outlined, 'Syarat & Ketentuan', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PageScreen(slug: 'syarat-ketentuan')))),
                     _menuItem(Icons.privacy_tip_outlined, 'Kebijakan Privasi', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PageScreen(slug: 'kebijakan-privasi')))),
