@@ -26,6 +26,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   bool _uploading = false;
   String? _error;
   List<Map<String, dynamic>> _bankAccounts = [];
+  Timer? _pollTimer;
+  String? _lastStatus;
 
   static const _statusSteps = ['pending', 'waiting_confirmation', 'processing', 'shipped', 'completed'];
   static const _stepLabels = {
@@ -40,6 +42,59 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   void initState() {
     super.initState();
     _loadOrder();
+    _startPolling();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startPolling() {
+    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted || _order == null) return;
+      _pollOrderStatus();
+    });
+  }
+
+  Future<void> _pollOrderStatus() async {
+    try {
+      final res = await _api.get('/orders/${widget.orderId}');
+      if (!mounted) return;
+      final newOrder = Order.fromJson(res as Map<String, dynamic>, detail: true);
+      final newStatus = newOrder.status;
+      if (newStatus != _lastStatus && _lastStatus != null) {
+        setState(() => _order = newOrder);
+        _showStatusChangeSnackbar(_lastStatus!, newStatus);
+      }
+      _lastStatus = newStatus;
+    } catch (_) {}
+  }
+
+  void _showStatusChangeSnackbar(String oldStatus, String newStatus) {
+    final labels = {
+      'pending': 'Menunggu Pembayaran',
+      'waiting_confirmation': 'Menunggu Konfirmasi',
+      'processing': 'Diproses',
+      'shipped': 'Dikirim',
+      'completed': 'Selesai',
+      'cancelled': 'Dibatalkan',
+    };
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(
+        children: [
+          const Icon(Icons.info_outline, color: Colors.white, size: 20),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Status: ${labels[newStatus] ?? newStatus}')),
+        ],
+      ),
+      backgroundColor: Colors.blue,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      duration: const Duration(seconds: 3),
+    ));
   }
 
   Future<void> _loadOrder() async {
@@ -51,8 +106,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     try {
       final res = await _api.get('/orders/${widget.orderId}');
       if (!mounted) return;
+      final loaded = Order.fromJson(res as Map<String, dynamic>, detail: true);
       setState(() {
-        _order = Order.fromJson(res as Map<String, dynamic>, detail: true);
+        _order = loaded;
+        _lastStatus = loaded.status;
         _bankAccounts = (res['bank_accounts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
         _loading = false;
       });
