@@ -130,7 +130,118 @@ class ApiService {
     return (res as List).cast<Map<String, dynamic>>();
   }
 
+  // ── Cart ──
+  Future<Map<String, dynamic>> getCart() async {
+    return await get('/cart') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> addToCart(int productId, int quantity) async {
+    return await post('/cart/add/$productId', body: {
+      'quantity': quantity,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateCartItem(int productId, int quantity) async {
+    return await post('/cart/update', body: {
+      'product_id': productId,
+      'quantity': quantity,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> removeCartItem(int productId) async {
+    return await post('/cart/remove', body: {
+      'product_id': productId,
+    }) as Map<String, dynamic>;
+  }
+
+  // ── Wishlist ──
+  Future<List<Map<String, dynamic>>> getWishlist() async {
+    final res = await get('/wishlist');
+    if (res is Map && res.containsKey('data')) {
+      return (res['data'] as List).cast<Map<String, dynamic>>();
+    }
+    if (res is List) {
+      return res.cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> toggleWishlist(int productId) async {
+    return await post('/wishlist/toggle/$productId') as Map<String, dynamic>;
+  }
+
+  Future<void> addToWishlist(int productId) async {
+    await post('/wishlist/toggle/$productId');
+  }
+
+  Future<void> removeFromWishlist(int productId) async {
+    await post('/wishlist/toggle/$productId');
+  }
+
+  // ── Orders ──
+  Future<List<Map<String, dynamic>>> getOrders({int page = 1}) async {
+    final res = await get('/orders?page=$page');
+    if (res is Map && res.containsKey('data')) {
+      return (res['data'] as List).cast<Map<String, dynamic>>();
+    }
+    if (res is List) {
+      return res.cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> getOrderDetail(int orderId) async {
+    return await get('/orders/$orderId') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> uploadPaymentProof(int orderId, String filePath) async {
+    return await uploadFile('/orders/$orderId/payment-upload',
+      field: 'payment_proof',
+      file: File(filePath),
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> confirmReceived(int orderId) async {
+    return await post('/orders/$orderId/confirm-received') as Map<String, dynamic>;
+  }
+
+  // ── Reviews ──
+  Future<Map<String, dynamic>> submitReview(int orderId, Map<String, dynamic> ratings) async {
+    return await post('/orders/$orderId/review', body: ratings) as Map<String, dynamic>;
+  }
+
+  // ── Returns ──
+  Future<Map<String, dynamic>> submitReturn(int orderId, Map<String, dynamic> data) async {
+    return await post('/orders/$orderId/retur', body: data) as Map<String, dynamic>;
+  }
+
+  // ── Profile ──
+  Future<Map<String, dynamic>> getProfile() async {
+    return await get('/profile') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
+    return await put('/profile', body: data) as Map<String, dynamic>;
+  }
+
+  // ── Notifications ──
+  Future<List<Map<String, dynamic>>> getNotifications({int page = 1}) async {
+    final res = await get('/notifications?page=$page');
+    if (res is Map && res.containsKey('data')) {
+      return (res['data'] as List).cast<Map<String, dynamic>>();
+    }
+    if (res is List) {
+      return res.cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
   // ── Compare ──
+  Future<void> removeFromCompare(int productId) async {
+    // Compare is session-based on server, local-only on mobile
+    return;
+  }
+
   Future<List<Map<String, dynamic>>> getCompare(List<int> ids) async {
     final idsStr = ids.join(',');
     final res = await get('/compare?ids=$idsStr');
@@ -151,7 +262,13 @@ class ApiService {
   // ── Bundles ──
   Future<List<Map<String, dynamic>>> getBundles() async {
     final res = await get('/bundles');
-    return (res as List).cast<Map<String, dynamic>>();
+    if (res is Map && res.containsKey('data')) {
+      return (res['data'] as List).cast<Map<String, dynamic>>();
+    }
+    if (res is List) {
+      return res.cast<Map<String, dynamic>>();
+    }
+    return [];
   }
 
   Future<Map<String, dynamic>> getBundleDetail(int id) async {
