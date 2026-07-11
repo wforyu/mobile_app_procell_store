@@ -7,7 +7,22 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await ApiService().init();
+  final api = ApiService();
+  await api.init();
+
+  // Auto-logout saat token expired (401)
+  api.setOnUnauthenticated(() {
+    final ctx = navigatorKey.currentContext;
+    if (ctx != null) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text('Sesi berakhir. Silakan login ulang.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  });
+
   runApp(const ProcellApp());
 }
 
