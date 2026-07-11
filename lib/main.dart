@@ -9,6 +9,10 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppConfig.loadPersistedUrl();
+
+  // Fetch config dari server (admin panel) untuk auto-update API URL
+  await AppConfig.fetchAndUpdateConfig();
+
   final api = ApiService();
   await api.init();
 
