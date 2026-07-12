@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/order.dart';
@@ -646,6 +647,73 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               const Divider(height: 16),
               _row('No. Resi', _order!.trackingNumber!, color: AppColors.primary),
             ],
+            if (_order!.trackingTimeline != null && _order!.trackingTimeline!.isNotEmpty) ...[
+              const Divider(height: 16),
+              const Text('Timeline Pengiriman', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              ..._order!.trackingTimeline!.reversed.map((step) {
+                final status = step['status'] as String? ?? '';
+                final label = step['label'] as String? ?? status;
+                final description = step['description'] as String? ?? '';
+                final done = step['done'] == true;
+                final time = step['time'] as String?;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 16, height: 16,
+                        margin: const EdgeInsets.only(top: 2),
+                        decoration: BoxDecoration(
+                          color: done ? Colors.green : Colors.grey[300],
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(done ? Icons.check : Icons.circle, size: 10, color: Colors.white),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(label, style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: done ? FontWeight.w600 : FontWeight.normal,
+                              color: done ? Colors.black87 : Colors.grey,
+                            )),
+                            if (description.isNotEmpty)
+                              Text(description, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                            if (time != null)
+                              Text(time, style: TextStyle(fontSize: 10, color: Colors.grey[400])),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+            if (_order!.trackingUrl != null && _order!.trackingUrl!.isNotEmpty) ...[
+              const Divider(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final uri = Uri.parse(_order!.trackingUrl!);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('Lacak Pengiriman'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -668,6 +736,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               ],
             ),
             const SizedBox(height: 8),
+            if (_order!.recipientName != null) ...[
+              Text(_order!.recipientName!, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              if (_order!.recipientPhone != null)
+                Text(_order!.recipientPhone!, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+              const SizedBox(height: 4),
+            ],
             Text(_order!.shippingAddress!,
                 style: TextStyle(color: Colors.grey[700], fontSize: 13, height: 1.4)),
           ],

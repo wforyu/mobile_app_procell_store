@@ -22,9 +22,13 @@ class Order {
   final String? paymentMethodLabel;
   final String? paymentProof;
   final String? shippingAddress;
+  final String? recipientName;
+  final String? recipientPhone;
   final String? notes;
   final List<OrderItem>? items;
   final List<Map<String, dynamic>>? returns;
+  final String? trackingUrl;
+  final List<Map<String, dynamic>>? trackingTimeline;
 
   Order({
     required this.id,
@@ -47,9 +51,13 @@ class Order {
     this.paymentMethodLabel,
     this.paymentProof,
     this.shippingAddress,
+    this.recipientName,
+    this.recipientPhone,
     this.notes,
     this.items,
     this.returns,
+    this.trackingUrl,
+    this.trackingTimeline,
   });
 
   static int _toInt(dynamic value) {
@@ -88,10 +96,16 @@ class Order {
       paymentMethodLabel: json['payment_method_label'] as String?,
       paymentProof: AppConfig.imageUrl(json['payment_proof'] as String?),
       shippingAddress: json['shipping_address'] as String?,
+      recipientName: json['recipient_name'] as String?,
+      recipientPhone: json['recipient_phone'] as String?,
       notes: json['notes'] as String?,
       items: detail ? itemsList : null,
       returns: json['returns'] != null
           ? List<Map<String, dynamic>>.from(json['returns'])
+          : null,
+      trackingUrl: json['tracking_url'] as String?,
+      trackingTimeline: json['tracking_timeline'] != null
+          ? List<Map<String, dynamic>>.from(json['tracking_timeline'])
           : null,
     );
   }

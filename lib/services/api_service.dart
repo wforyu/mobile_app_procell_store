@@ -358,6 +358,31 @@ class ApiService {
     return await get('/categories/$slug') as Map<String, dynamic>;
   }
 
+  // ── Addresses ──
+  Future<List<Map<String, dynamic>>> getAddresses() async {
+    final res = await get('/addresses');
+    if (res is Map && res.containsKey('data')) {
+      return (res['data'] as List).cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> addAddress(Map<String, dynamic> data) async {
+    return await post('/addresses', body: data) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateAddress(int id, Map<String, dynamic> data) async {
+    return await put('/addresses/$id', body: data) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteAddress(int id) async {
+    await delete('/addresses/$id');
+  }
+
+  Future<void> setDefaultAddress(int id) async {
+    await post('/addresses/$id/set-default');
+  }
+
   dynamic _handleResponse(http.Response response) {
     if (response.statusCode == 401) {
       clearToken();

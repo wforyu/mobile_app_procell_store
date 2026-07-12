@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../config.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../models/user.dart';
@@ -12,6 +11,7 @@ import 'chat_list_screen.dart';
 import 'page_screen.dart';
 import 'bundles_screen.dart';
 import 'loyalty_points_screen.dart';
+import 'address_book_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -36,7 +36,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int? _cityId;
   String? _cityName;
   List<dynamic> _allCities = [];
-  bool _loadingCities = false;
 
   int _orderCount = 0;
   int _wishlistCount = 0;
@@ -107,11 +106,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() {
         _allCities = (res['cities'] as List?) ?? [];
-        _loadingCities = false;
       });
-    } catch (_) {
-      if (mounted) setState(() => _loadingCities = false);
-    }
+    } catch (_) {}
   }
 
   Future<void> _showCityPicker() async {
@@ -139,7 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     bool obscureConfirm = true;
     bool saving = false;
 
-    final result = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -666,6 +662,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _menuItem(Icons.local_activity, 'Paket Bundling', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BundlesScreen()))),
                     _menuItem(Icons.chat_outlined, 'Pusat Bantuan', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatListScreen()))),
                     _menuItem(Icons.lock_outline, 'Ubah Password', _showChangePassword),
+                    _menuItem(Icons.location_on_outlined, 'Alamat Saya', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddressBookScreen()))),
                     _menuItem(Icons.stars_rounded, 'Riwayat Poin', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LoyaltyPointsScreen())), badge: _pointsBalance.toString()),
                   ]),
                 ),

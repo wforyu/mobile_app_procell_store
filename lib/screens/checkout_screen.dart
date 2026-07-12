@@ -29,11 +29,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int _maxRedeemPoints = 0;
 
   // Profile auto-fill
-  String? _profileAddress;
-  int? _profileCityId;
-  String? _profileCityName;
   String? _profileAddressType;
-  bool _profileLoaded = false;
 
   // Selected values
   final _addressC = TextEditingController();
@@ -50,6 +46,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _checkingCoupon = false;
   int _pointsToUse = 0;
   bool _usePoints = false;
+
+  // Saved addresses
+  List<Map<String, dynamic>> _savedAddresses = [];
+  Map<String, dynamic>? _selectedAddress;
+  bool _useManualAddress = false;
 
   Map<String, dynamic>? _availableServices;
   bool _loadingRates = false;
@@ -106,20 +107,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _pointsBalance = res['points_balance'] as int? ?? 0;
         _maxRedeemPoints = res['max_redeem_points'] as int? ?? 0;
 
-        _profileAddress = profileAddress;
-        _profileCityId = profileCityId;
-        _profileCityName = profileCityName;
-        _profileAddressType = profileAddressType;
-        _profileLoaded = true;
+        // Load saved addresses (top-level)
+        final addrList = res['addresses'] as List?;
+        _savedAddresses = addrList?.cast<Map<String, dynamic>>() ?? [];
 
-        _addressC.text = profileAddress;
-        _selectedCityId = profileCityId;
-        _selectedCityName = profileCityName;
+        _profileAddressType = profileAddressType;
+
+        // If saved addresses exist, select default; otherwise manual
+        if (_savedAddresses.isNotEmpty) {
+          final defaultAddr = _savedAddresses.firstWhere(
+            (a) => a['is_default'] == true,
+            orElse: () => _savedAddresses.first,
+          );
+          _selectedAddress = defaultAddr;
+          _useManualAddress = false;
+          _addressC.text = defaultAddr['address_line'] ?? '';
+          _selectedCityId = defaultAddr['city_id'] as int?;
+          _selectedCityName = defaultAddr['city_name'] as String?;
+        } else {
+          _useManualAddress = true;
+          _addressC.text = profileAddress;
+          _selectedCityId = profileCityId;
+          _selectedCityName = profileCityName;
+        }
 
         _loading = false;
       });
 
-      if (profileCityId != null) {
+      if (_selectedCityId != null) {
         _loadRates();
       }
     } on ApiException catch (e) {
@@ -248,6 +263,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     searchC.dispose();
   }
 
+  String _formatShortAddress(Map<String, dynamic> addr) {
+    final parts = <String>[
+      addr['address_line'] ?? '',
+      if (addr['district_name'] != null) 'Kec. ${addr['district_name']}',
+      addr['city_name'] ?? '',
+      addr['province_name'] ?? '',
+      addr['postal_code'] ?? '',
+    ].where((s) => s.isNotEmpty).toList();
+    return parts.join(', ');
+  }
+
   Future<void> _loadRates() async {
     if (_selectedCityId == null || _totalWeight <= 0) return;
     setState(() => _loadingRates = true);
@@ -320,6 +346,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'notes': null,
         'city_name': _selectedCityName,
         'address_type': _profileAddressType,
+        if (_selectedAddress != null) 'address_id': _selectedAddress!['id'],
+        if (_selectedAddress != null) 'recipient_name': _selectedAddress!['recipient_name'],
+        if (_selectedAddress != null) 'recipient_phone': _selectedAddress!['recipient_phone'],
       });
       if (!mounted) return;
       final order = res['order'] as Map<String, dynamic>;
@@ -387,34 +416,120 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             Row(
               children: [
                 const Text('Alamat Pengiriman', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                if (_profileAddressType != null)
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _profileAddressType == 'home' ? Colors.blue[50] : Colors.orange[50],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _profileAddressType == 'home' ? 'Rumah' : 'Kantor',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: _profileAddressType == 'home' ? Colors.blue[700] : Colors.orange[700],
-                      ),
-                    ),
+                const Spacer(),
+                if (!_useManualAddress)
+                  TextButton.icon(
+                    onPressed: () => setState(() => _useManualAddress = true),
+                    icon: const Icon(Icons.edit_location_alt_outlined, size: 16),
+                    label: const Text('Manual', style: TextStyle(fontSize: 12)),
                   ),
               ],
             ),
             const SizedBox(height: 8),
-            TextFormField(
-              controller: _addressC,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Masukkan alamat lengkap',
-                border: OutlineInputBorder(),
+            // Saved address selector
+            if (!_useManualAddress && _savedAddresses.isNotEmpty) ...[
+              ..._savedAddresses.map((addr) {
+                final isSelected = _selectedAddress?['id'] == addr['id'];
+                final label = addr['label'] ?? 'Rumah';
+                final isDefault = addr['is_default'] == true;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedAddress = addr;
+                      _addressC.text = addr['address_line'] ?? '';
+                      _selectedCityId = addr['city_id'] as int?;
+                      _selectedCityName = addr['city_name'] as String?;
+                      _selectedCourier = null;
+                      _selectedService = null;
+                      _shippingCost = 0;
+                      _availableServices = null;
+                    });
+                    _loadRates();
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isSelected ? AppColors.primary : Colors.grey[300]!,
+                        width: isSelected ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      color: isSelected ? AppColors.primaryLight : null,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Radio<Map<String, dynamic>>(
+                          value: addr,
+                          groupValue: _selectedAddress,
+                          onChanged: (v) {
+                            setState(() => _selectedAddress = v);
+                          },
+                          activeColor: AppColors.primary,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? AppColors.primary : Colors.grey[200],
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      label,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: isSelected ? Colors.white : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ),
+                                  if (isDefault) ...[
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(4)),
+                                      child: const Text('Utama', style: TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.w600)),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(addr['recipient_name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                              Text(addr['recipient_phone'] ?? '', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                              const SizedBox(height: 2),
+                              Text(
+                                _formatShortAddress(addr),
+                                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+            // Manual address (always shown if no saved addresses, or toggled)
+            if (_useManualAddress || _savedAddresses.isEmpty)
+              TextFormField(
+                controller: _addressC,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Masukkan alamat lengkap',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
             const SizedBox(height: 16),
             const Text('Kota Tujuan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
