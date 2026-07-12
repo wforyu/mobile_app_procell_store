@@ -5,37 +5,46 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
   static String? _overrideBaseUrl;
-  static const String _prefKey = 'custom_api_url';
+  static const String _prefKeyUser = 'custom_api_url';
   static const String _prefKeyServer = 'server_api_url';
 
-  /// Set the base URL at runtime and persist to storage.
+  /// Set the base URL at runtime (user manual override).
   static Future<void> setBaseUrl(String url) async {
     _overrideBaseUrl = url.isNotEmpty ? url : null;
     final prefs = await SharedPreferences.getInstance();
     if (url.isNotEmpty) {
-      await prefs.setString(_prefKey, url);
+      await prefs.setString(_prefKeyUser, url);
     } else {
-      await prefs.remove(_prefKey);
+      await prefs.remove(_prefKeyUser);
     }
   }
 
-  /// Load persisted base URL on app start.
+  /// Load persisted URLs on app start.
+  /// Priority: user override > server-pushed URL > compile-time default
   static Future<void> loadPersistedUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_prefKey);
-    if (saved != null && saved.isNotEmpty) {
-      _overrideBaseUrl = saved;
+
+    // User manual override (highest priority)
+    final userUrl = prefs.getString(_prefKeyUser);
+    if (userUrl != null && userUrl.isNotEmpty) {
+      _overrideBaseUrl = userUrl;
+      return;
+    }
+
+    // Server-pushed URL (from admin panel)
+    final serverUrl = prefs.getString(_prefKeyServer);
+    if (serverUrl != null && serverUrl.isNotEmpty) {
+      _overrideBaseUrl = serverUrl;
     }
   }
 
-  /// Current persisted URL (for display in settings).
+  /// Current active URL (for display).
   static String get currentUrl => _overrideBaseUrl ?? '';
 
   /// Base URL resolution order:
-  /// 1. User override (Pengaturan Server di APK)
-  /// 2. Server-pushed URL (dari admin panel)
-  /// 3. Compile-time --dart-define=API_URL=...
-  /// 4. Platform defaults
+  /// 1. User override or server-pushed URL (persisted)
+  /// 2. Compile-time --dart-define=API_URL=...
+  /// 3. Platform defaults
   static String get baseUrl {
     if (_overrideBaseUrl != null && _overrideBaseUrl!.isNotEmpty) {
       return _overrideBaseUrl!;
@@ -48,8 +57,8 @@ class AppConfig {
     return 'http://10.0.2.2:8000/api';
   }
 
-  /// Fetch app config from server and auto-update API URL if set in admin panel.
-  /// Called on app startup. Uses current baseUrl to reach the server.
+  /// Fetch app config from server. If admin panel has set mobile_api_url,
+  /// auto-apply it and persist for next startup.
   static Future<void> fetchAndUpdateConfig() async {
     try {
       final url = Uri.parse('${baseUrl}/app-config');
@@ -64,20 +73,21 @@ class AppConfig {
         final prefs = await SharedPreferences.getInstance();
 
         if (serverUrl != null && serverUrl.isNotEmpty) {
-          // Save server-pushed URL (different from user override)
+          // Simpan URL dari server → dipakai di startup berikutnya
           await prefs.setString(_prefKeyServer, serverUrl);
-
-          // Only auto-apply if user hasn't manually set an override
-          if (_overrideBaseUrl == null) {
-            _overrideBaseUrl = serverUrl;
-          }
+          _overrideBaseUrl = serverUrl;
         } else {
-          // Server cleared the URL, remove saved server URL
+          // Admin kosongkan URL → hapus saved, balik ke default
           await prefs.remove(_prefKeyServer);
+          // Cek apakah user juga gak punya override
+          final userUrl = prefs.getString(_prefKeyUser);
+          if (userUrl == null || userUrl.isEmpty) {
+            _overrideBaseUrl = null;
+          }
         }
       }
     } catch (_) {
-      // Silently fail — use whatever URL is currently configured
+      // Gagal fetch → pakai URL yang sudah tersimpan
     }
   }
 
