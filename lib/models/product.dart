@@ -123,7 +123,7 @@ class CategoryInfo {
 
   factory CategoryInfo.fromJson(Map<String, dynamic> json) {
     return CategoryInfo(
-      id: json['id'] as int,
+      id: Product._toInt(json['id']),
       name: json['name'] as String,
       slug: json['slug'] as String,
     );

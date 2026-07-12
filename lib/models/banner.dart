@@ -17,14 +17,21 @@ class BannerModel {
     this.sortOrder = 0,
   });
 
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
   factory BannerModel.fromJson(Map<String, dynamic> json) {
     return BannerModel(
-      id: json['id'] as int,
+      id: _toInt(json['id']),
       title: json['title'] as String?,
       link: json['link'] as String?,
       image: AppConfig.imageUrl(json['image'] as String?),
       type: json['type'] as String?,
-      sortOrder: json['sort_order'] as int? ?? 0,
+      sortOrder: _toInt(json['sort_order']),
     );
   }
 }

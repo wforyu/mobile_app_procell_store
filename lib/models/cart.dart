@@ -15,6 +15,13 @@ class Cart {
     required this.count,
   });
 
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
   factory Cart.fromJson(Map<String, dynamic> json) {
     final itemsList = <CartItem>[];
     if (json['items'] != null) {
@@ -23,11 +30,11 @@ class Cart {
       }
     }
     return Cart(
-      id: json['id'] as int,
+      id: _toInt(json['id']),
       items: itemsList,
-      total: json['total'] as int? ?? 0,
+      total: _toInt(json['total']),
       totalFormatted: json['total_formatted'] as String? ?? 'Rp 0',
-      count: json['count'] as int? ?? 0,
+      count: _toInt(json['count']),
     );
   }
 }
@@ -51,16 +58,23 @@ class CartItem {
     required this.subtotalFormatted,
   });
 
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
   factory CartItem.fromJson(Map<String, dynamic> json) {
     return CartItem(
-      id: json['id'] as int,
-      productId: json['product_id'] as int,
+      id: _toInt(json['id']),
+      productId: _toInt(json['product_id']),
       product: json['product'] != null
           ? CartProduct.fromJson(json['product'])
           : null,
-      quantity: json['quantity'] as int? ?? 0,
-      price: json['price'] as int? ?? 0,
-      subtotal: json['subtotal'] as int? ?? 0,
+      quantity: _toInt(json['quantity']),
+      price: _toInt(json['price']),
+      subtotal: _toInt(json['subtotal']),
       subtotalFormatted:
           json['subtotal_formatted'] as String? ?? 'Rp 0',
     );
@@ -90,17 +104,24 @@ class CartProduct {
     required this.stock,
   });
 
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
   factory CartProduct.fromJson(Map<String, dynamic> json) {
     return CartProduct(
-      id: json['id'] as int,
+      id: _toInt(json['id']),
       name: json['name'] as String,
       slug: json['slug'] as String,
-      price: json['price'] as int? ?? 0,
+      price: _toInt(json['price']),
       priceFormatted: json['price_formatted'] as String? ?? 'Rp 0',
-      promoPrice: json['promo_price'] as int?,
+      promoPrice: json['promo_price'] != null ? _toInt(json['promo_price']) : null,
       promoPriceFormatted: json['promo_price_formatted'] as String?,
       image: AppConfig.imageUrl(json['image'] as String?),
-      stock: json['stock'] as int? ?? 0,
+      stock: _toInt(json['stock']),
     );
   }
 }
