@@ -65,21 +65,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final res = await _api.get('/profile');
       if (!mounted) return;
       final user = User.fromJson(res);
-      final ordersRes = await _api.get('/orders');
-      final wishlistRes = await _api.get('/wishlist');
-      if (!mounted) return;
-      final orderList = (ordersRes is Map && ordersRes.containsKey('data'))
-          ? (ordersRes['data'] as List)
-          : (ordersRes as List);
-      final wishlistList = (wishlistRes is List)
-          ? wishlistRes
-          : (wishlistRes['data'] as List? ?? []);
-      int pts = 0;
-      try {
-        final ptsRes = await _api.get('/loyalty/balance');
-        pts = ptsRes['balance'] as int? ?? 0;
-      } catch (_) {}
-      if (!mounted) return;
+
+      // Set _user immediately so profile displays even if secondary calls fail
       setState(() {
         _user = user;
         _nameC.text = user.name;
@@ -88,11 +75,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _addressType = user.addressType;
         _cityId = user.cityId;
         _cityName = user.cityName;
-        _orderCount = orderList.length;
-        _wishlistCount = wishlistList.length;
-        _pointsBalance = pts;
         _loading = false;
       });
+
+      // Load secondary data (non-critical, failures are silently ignored)
+      try {
+        final ordersRes = await _api.get('/orders');
+        if (!mounted) return;
+        final orderList = (ordersRes is Map && ordersRes.containsKey('data'))
+            ? (ordersRes['data'] as List)
+            : (ordersRes as List);
+        if (mounted) setState(() => _orderCount = orderList.length);
+      } catch (_) {}
+
+      try {
+        final wishlistRes = await _api.get('/wishlist');
+        if (!mounted) return;
+        final wishlistList = (wishlistRes is List)
+            ? wishlistRes
+            : (wishlistRes['data'] as List? ?? []);
+        if (mounted) setState(() => _wishlistCount = wishlistList.length);
+      } catch (_) {}
+
+      try {
+        final ptsRes = await _api.get('/loyalty/balance');
+        if (!mounted) return;
+        if (mounted) setState(() => _pointsBalance = ptsRes['balance'] as int? ?? 0);
+      } catch (_) {}
+
       _loadCities();
     } catch (e) {
       if (!mounted) return;
@@ -411,6 +421,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
           elevation: 0.5,
         ),
         body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_user == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Profil'),
+          backgroundColor: Colors.white,
+          foregroundColor: AppColors.textPrimary,
+          elevation: 0.5,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.person_off_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 12),
+              Text('Gagal memuat profil', style: TextStyle(color: Colors.grey[600], fontSize: 16)),
+              const SizedBox(height: 8),
+              ElevatedButton(onPressed: _loadProfile, child: const Text('Coba Lagi')),
+            ],
+          ),
+        ),
       );
     }
 
