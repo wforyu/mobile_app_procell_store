@@ -55,15 +55,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
+  String _profileError = 'Gagal memuat profil';
+
   Future<void> _loadProfile() async {
     if (!_api.hasToken) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _loading = false; _profileError = 'Silakan login terlebih dahulu'; });
       return;
     }
-    setState(() => _loading = true);
+    setState(() { _loading = true; _profileError = 'Gagal memuat profil'; });
     try {
-      final res = await _api.get('/profile');
+      final raw = await _api.get('/profile');
       if (!mounted) return;
+
+      // Handle both wrapped {data: {...}} and flat {id: ...} responses
+      final res = (raw is Map && raw.containsKey('data') && raw['data'] is Map)
+          ? raw['data'] as Map<String, dynamic>
+          : raw as Map<String, dynamic>;
       final user = User.fromJson(res);
 
       // Set _user immediately so profile displays even if secondary calls fail
@@ -106,7 +113,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _loadCities();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _profileError = 'Gagal memuat profil: $e';
+      });
     }
   }
 
@@ -433,15 +443,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
           elevation: 0.5,
         ),
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.person_off_outlined, size: 64, color: Colors.grey),
-              const SizedBox(height: 12),
-              Text('Gagal memuat profil', style: TextStyle(color: Colors.grey[600], fontSize: 16)),
-              const SizedBox(height: 8),
-              ElevatedButton(onPressed: _loadProfile, child: const Text('Coba Lagi')),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.person_off_outlined, size: 64, color: Colors.grey),
+                const SizedBox(height: 12),
+                Text(_profileError, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _loadProfile,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Coba Lagi'),
+                ),
+              ],
+            ),
           ),
         ),
       );
