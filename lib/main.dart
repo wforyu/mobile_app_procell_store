@@ -1,11 +1,34 @@
 import 'package:flutter/material.dart';
+import 'config.dart';
 import 'services/api_service.dart';
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
+import 'helpers/theme.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await ApiService().init();
+  await AppConfig.loadPersistedUrl();
+
+  // Fetch config dari server (admin panel) untuk auto-update API URL
+  await AppConfig.fetchAndUpdateConfig();
+
+  final api = ApiService();
+  await api.init();
+
+  // Auto-logout saat token expired (401)
+  api.setOnUnauthenticated(() {
+    final ctx = navigatorKey.currentContext;
+    if (ctx != null) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text('Sesi berakhir. Silakan login ulang.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  });
+
   runApp(const ProcellApp());
 }
 
@@ -17,16 +40,9 @@ class ProcellApp extends StatelessWidget {
     return MaterialApp(
       title: 'ProCell Store',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1A73E8),
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-      ),
-      home: ApiService().hasToken
-          ? const HomeScreen()
-          : const LoginScreen(),
+      theme: AppTheme.light,
+      navigatorKey: navigatorKey,
+      home: const SplashScreen(),
     );
   }
 }

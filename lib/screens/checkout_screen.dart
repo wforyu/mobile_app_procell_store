@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
+import '../helpers/price_formatter.dart';
+import '../helpers/theme.dart';
+import 'login_screen.dart';
+import 'home_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -23,17 +28,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int _pointsBalance = 0;
   int _maxRedeemPoints = 0;
 
+  // Profile auto-fill
+  String? _profileAddressType;
+
   // Selected values
   final _addressC = TextEditingController();
   int? _selectedCityId;
+  String? _selectedCityName;
   String? _selectedCourier;
   String? _selectedService;
   int _shippingCost = 0;
   String _paymentMethod = 'bank_transfer';
   int? _selectedBankId;
   final _couponC = TextEditingController();
+  int _couponDiscount = 0;
+  String? _appliedCouponCode;
+  bool _checkingCoupon = false;
   int _pointsToUse = 0;
   bool _usePoints = false;
+
+  // Saved addresses
+  List<Map<String, dynamic>> _savedAddresses = [];
+  Map<String, dynamic>? _selectedAddress;
+  bool _useManualAddress = false;
 
   Map<String, dynamic>? _availableServices;
   bool _loadingRates = false;
@@ -41,6 +58,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    if (!_api.hasToken) {
+      final loggedIn = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      if (loggedIn != true || !mounted) {
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+    }
     _loadCheckout();
   }
 
@@ -59,6 +90,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final res = await _api.get('/checkout');
       if (!mounted) return;
+
+      // Profile auto-fill
+      final profile = res['profile'] as Map<String, dynamic>?;
+      final profileAddress = profile?['address'] as String? ?? '';
+      final profileCityId = profile?['city_id'] as int?;
+      final profileCityName = profile?['city_name'] as String?;
+      final profileAddressType = profile?['address_type'] as String?;
+
       setState(() {
         _bankAccounts = (res['bank_accounts'] as List?) ?? [];
         _cities = (res['cities'] as List?) ?? [];
@@ -67,8 +106,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _cartTotal = (res['cart']['total'] as int?) ?? 0;
         _pointsBalance = res['points_balance'] as int? ?? 0;
         _maxRedeemPoints = res['max_redeem_points'] as int? ?? 0;
+
+        // Load saved addresses (top-level)
+        final addrList = res['addresses'] as List?;
+        _savedAddresses = addrList?.cast<Map<String, dynamic>>() ?? [];
+
+        _profileAddressType = profileAddressType;
+
+        // If saved addresses exist, select default; otherwise manual
+        if (_savedAddresses.isNotEmpty) {
+          final defaultAddr = _savedAddresses.firstWhere(
+            (a) => a['is_default'] == true,
+            orElse: () => _savedAddresses.first,
+          );
+          _selectedAddress = defaultAddr;
+          _useManualAddress = false;
+          _addressC.text = defaultAddr['address_line'] ?? '';
+          _selectedCityId = defaultAddr['city_id'] as int?;
+          _selectedCityName = defaultAddr['city_name'] as String?;
+        } else {
+          _useManualAddress = true;
+          _addressC.text = profileAddress;
+          _selectedCityId = profileCityId;
+          _selectedCityName = profileCityName;
+        }
+
         _loading = false;
       });
+
+      if (_selectedCityId != null) {
+        _loadRates();
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -82,6 +150,128 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _checkCoupon() async {
+    final code = _couponC.text.trim();
+    if (code.isEmpty) return;
+    setState(() => _checkingCoupon = true);
+    try {
+      final res = await _api.applyCoupon(code, _cartTotal);
+      if (!mounted) return;
+      setState(() {
+        _couponDiscount = res['discount'] as int? ?? 0;
+        _appliedCouponCode = code;
+        _checkingCoupon = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Diskon: ${res['discount_formatted']}')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _couponDiscount = 0;
+        _appliedCouponCode = null;
+        _checkingCoupon = false;
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _removeCoupon() async {
+    try {
+      await _api.removeCoupon();
+    } catch (_) {}
+    setState(() {
+      _couponDiscount = 0;
+      _appliedCouponCode = null;
+      _couponC.clear();
+    });
+  }
+
+  Future<void> _showCityPicker() async {
+    final TextEditingController searchC = TextEditingController();
+    List<dynamic> filtered = List.from(_cities);
+
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Pilih Kota'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: searchC,
+                      decoration: const InputDecoration(
+                        hintText: 'Cari kota...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      autofocus: true,
+                      onChanged: (v) {
+                        setDialogState(() {
+                          filtered = _cities.where((c) {
+                            final name = (c['name'] as String?)?.toLowerCase() ?? '';
+                            final province = (c['province'] as String?)?.toLowerCase() ?? '';
+                            final q = v.toLowerCase();
+                            return name.contains(q) || province.contains(q);
+                          }).toList();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: filtered.map((c) => ListTile(
+                          dense: true,
+                          title: Text('${c['name']} (${c['province']})'),
+                          selected: c['id'] == _selectedCityId,
+                          onTap: () => Navigator.pop(ctx, { 'id': c['id'] as int, 'name': c['name'] as String }),
+                        )).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (selected != null && mounted) {
+      setState(() {
+        _selectedCityId = selected['id'] as int;
+        _selectedCityName = selected['name'] as String;
+        _selectedCourier = null;
+        _selectedService = null;
+        _shippingCost = 0;
+        _availableServices = null;
+      });
+      _loadRates();
+    }
+    searchC.dispose();
+  }
+
+  String _formatShortAddress(Map<String, dynamic> addr) {
+    final parts = <String>[
+      addr['address_line'] ?? '',
+      if (addr['district_name'] != null) 'Kec. ${addr['district_name']}',
+      addr['city_name'] ?? '',
+      addr['province_name'] ?? '',
+      addr['postal_code'] ?? '',
+    ].where((s) => s.isNotEmpty).toList();
+    return parts.join(', ');
   }
 
   Future<void> _loadRates() async {
@@ -107,10 +297,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  int get _discountAmount {
-    // TODO: actual coupon calculation
-    return 0;
-  }
+  int get _discountAmount => _couponDiscount;
 
   int get _pointsDiscount {
     if (!_usePoints || _pointsToUse <= 0) return 0;
@@ -157,16 +344,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'coupon_code': _couponC.text.trim().isEmpty ? null : _couponC.text.trim(),
         'points_to_use': _usePoints ? _pointsToUse : 0,
         'notes': null,
+        'city_name': _selectedCityName,
+        'address_type': _profileAddressType,
+        if (_selectedAddress != null) 'address_id': _selectedAddress!['id'],
+        if (_selectedAddress != null) 'recipient_name': _selectedAddress!['recipient_name'],
+        if (_selectedAddress != null) 'recipient_phone': _selectedAddress!['recipient_phone'],
       });
       if (!mounted) return;
       final order = res['order'] as Map<String, dynamic>;
       final midtransUrl = order['midtrans_redirect_url'] as String?;
 
       if (midtransUrl != null && midtransUrl.isNotEmpty) {
-        // For web, open in new tab. For mobile, launch URL.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Redirect ke Midtrans: $midtransUrl')),
-        );
+        final uri = Uri.parse(midtransUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
       }
 
       if (!mounted) return;
@@ -198,13 +390,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Checkout'), backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white),
+        appBar: AppBar(title: const Text('Checkout'), backgroundColor: AppColors.primary, foregroundColor: Colors.white),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Checkout'), backgroundColor: const Color(0xFF1A73E8), foregroundColor: Colors.white),
+        appBar: AppBar(title: const Text('Checkout'), backgroundColor: AppColors.primary, foregroundColor: Colors.white),
         body: Center(child: Text(_error!)),
       );
     }
@@ -212,41 +404,167 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Checkout'),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+      body: SafeArea(
+        child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Alamat Pengiriman', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _addressC,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Masukkan alamat lengkap',
-                border: OutlineInputBorder(),
-              ),
+            Row(
+              children: [
+                const Text('Alamat Pengiriman', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (!_useManualAddress)
+                  TextButton.icon(
+                    onPressed: () => setState(() => _useManualAddress = true),
+                    icon: const Icon(Icons.edit_location_alt_outlined, size: 16),
+                    label: const Text('Manual', style: TextStyle(fontSize: 12)),
+                  ),
+              ],
             ),
+            const SizedBox(height: 8),
+            // Saved address selector
+            if (!_useManualAddress && _savedAddresses.isNotEmpty) ...[
+              ..._savedAddresses.map((addr) {
+                final isSelected = _selectedAddress?['id'] == addr['id'];
+                final label = addr['label'] ?? 'Rumah';
+                final isDefault = addr['is_default'] == true;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedAddress = addr;
+                      _addressC.text = addr['address_line'] ?? '';
+                      _selectedCityId = addr['city_id'] as int?;
+                      _selectedCityName = addr['city_name'] as String?;
+                      _selectedCourier = null;
+                      _selectedService = null;
+                      _shippingCost = 0;
+                      _availableServices = null;
+                    });
+                    _loadRates();
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isSelected ? AppColors.primary : Colors.grey[300]!,
+                        width: isSelected ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      color: isSelected ? AppColors.primaryLight : null,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Radio<Map<String, dynamic>>(
+                          value: addr,
+                          groupValue: _selectedAddress,
+                          onChanged: (v) {
+                            setState(() => _selectedAddress = v);
+                          },
+                          activeColor: AppColors.primary,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? AppColors.primary : Colors.grey[200],
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      label,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: isSelected ? Colors.white : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ),
+                                  if (isDefault) ...[
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(color: Colors.green[50], borderRadius: BorderRadius.circular(4)),
+                                      child: const Text('Utama', style: TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.w600)),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(addr['recipient_name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                              Text(addr['recipient_phone'] ?? '', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                              const SizedBox(height: 2),
+                              Text(
+                                _formatShortAddress(addr),
+                                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+            // Manual address (always shown if no saved addresses, or toggled)
+            if (_useManualAddress || _savedAddresses.isEmpty)
+              TextFormField(
+                controller: _addressC,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Masukkan alamat lengkap',
+                  border: OutlineInputBorder(),
+                ),
+              ),
             const SizedBox(height: 16),
             const Text('Kota Tujuan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              initialValue: _selectedCityId,
-              isExpanded: true,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              hint: const Text('Pilih kota'),
-              items: _cities.map((c) => DropdownMenuItem(
-                value: c['id'] as int,
-                child: Text('${c['name']} (${c['province']})', style: const TextStyle(fontSize: 13)),
-              )).toList(),
-              onChanged: (v) {
-                setState(() => _selectedCityId = v);
-                _loadRates();
-              },
+            InkWell(
+              onTap: _showCityPicker,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[400]!),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_city_outlined, size: 20, color: Colors.grey),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _selectedCityName ?? 'Pilih kota',
+                        style: TextStyle(
+                          color: _selectedCityName != null ? Colors.black : Colors.grey,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    const Icon(Icons.search, size: 18, color: Colors.grey),
+                  ],
+                ),
+              ),
             ),
+            if (_selectedCityName != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(_selectedCityName!, style: const TextStyle(fontSize: 12, color: Colors.green)),
+              ),
             const SizedBox(height: 16),
             const Text('Kurir', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -263,7 +581,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     _selectedService = null;
                     _shippingCost = 0;
                     final data = _couriers[v] as Map<String, dynamic>?;
-                    _availableServices = data?['services'] as Map<String, dynamic>? ?? {};
+                    final svc = data?['services'];
+                    if (svc is Map) {
+                      _availableServices = Map<String, dynamic>.from(svc);
+                    } else {
+                      _availableServices = {};
+                    }
                   });
                 },
                 child: Column(
@@ -289,18 +612,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 onChanged: (v) {
                   setState(() {
                     _selectedService = v;
-                    final data = _availableServices?[v] as Map<String, dynamic>?;
-                    _shippingCost = data?['cost'] as int? ?? 0;
+                    final svcVal = _availableServices?[v];
+                    _shippingCost = (svcVal is int) ? svcVal : ((svcVal as Map?)?['cost'] as int? ?? 0);
                   });
                 },
                 child: Column(
                   children: _availableServices!.entries.map((entry) {
                     final svc = entry.key;
-                    final data = entry.value as Map<String, dynamic>;
-                    final cost = data['cost'] as int? ?? 0;
+                    final svcVal = entry.value;
+                    final cost = (svcVal is int) ? svcVal : ((svcVal as Map?)?['cost'] as int? ?? 0);
+                    final etd = (svcVal is Map) ? svcVal['etd'] as String? : null;
                     return RadioListTile<String>(
-                      title: Text('$svc — Rp ${cost.toString()}'),
-                      subtitle: data['etd'] != null ? Text('Estimasi: ${data['etd']}') : null,
+                      title: Text('$svc — ${formatPrice(cost)}'),
+                      subtitle: etd != null ? Text('Estimasi: $etd') : null,
                       value: svc,
                       dense: true,
                     );
@@ -344,13 +668,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 16),
             const Text('Kupon (opsional)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            TextFormField(
-              controller: _couponC,
-              decoration: const InputDecoration(
-                hintText: 'Masukkan kode kupon',
-                border: OutlineInputBorder(),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _couponC,
+                    decoration: const InputDecoration(
+                      hintText: 'Masukkan kode kupon',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_appliedCouponCode != null)
+                  TextButton(
+                    onPressed: _removeCoupon,
+                    child: const Text('Hapus'),
+                  )
+                else
+                  ElevatedButton(
+                    onPressed: _checkingCoupon ? null : _checkCoupon,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: _checkingCoupon
+                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Gunakan'),
+                  ),
+              ],
             ),
+            if (_appliedCouponCode != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('Kupon "$_appliedCouponCode" aktif',
+                    style: const TextStyle(color: Colors.green, fontSize: 12)),
+              ),
             if (_pointsBalance > 0) ...[
               const SizedBox(height: 16),
               CheckboxListTile(
@@ -382,14 +736,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    _summaryRow('Subtotal', 'Rp $_cartTotal'),
-                    _summaryRow('Ongkos Kirim', _shippingCost > 0 ? 'Rp $_shippingCost' : '-'),
+                    _summaryRow('Subtotal', formatPrice(_cartTotal)),
+                    _summaryRow('Ongkos Kirim', _shippingCost > 0 ? formatPrice(_shippingCost) : '-'),
                     if (_discountAmount > 0)
-                      _summaryRow('Diskon Kupon', '-Rp $_discountAmount', color: Colors.green),
+                      _summaryRow('Diskon Kupon', '-${formatPrice(_discountAmount)}', color: Colors.green),
                     if (_pointsDiscount > 0)
-                      _summaryRow('Diskon Poin', '-Rp $_pointsDiscount', color: Colors.green),
+                      _summaryRow('Diskon Poin', '-${formatPrice(_pointsDiscount)}', color: Colors.green),
                     const Divider(),
-                    _summaryRow('Total', 'Rp $_grandTotal', color: const Color(0xFF1A73E8), bold: true),
+                    _summaryRow('Total', formatPrice(_grandTotal), color: AppColors.primary, bold: true),
                   ],
                 ),
               ),
@@ -401,7 +755,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               child: ElevatedButton(
                 onPressed: _submitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A73E8),
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                 ),
                 child: _submitting
@@ -412,6 +766,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             const SizedBox(height: 32),
           ],
         ),
+      ),
       ),
     );
   }
@@ -468,7 +823,7 @@ class _OrderSuccessScreen extends StatelessWidget {
                     children: [
                       Text('No. Pesanan: $orderNumber', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
                       const SizedBox(height: 8),
-                      Text('Total: $grandTotal', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A73E8))),
+                      Text('Total: $grandTotal', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primary)),
                       const SizedBox(height: 4),
                       Text(paymentMethod == 'midtrans' ? 'Pembayaran: Midtrans' : 'Pembayaran: Transfer Bank',
                           style: TextStyle(color: Colors.grey[600])),
@@ -479,13 +834,20 @@ class _OrderSuccessScreen extends StatelessWidget {
               const SizedBox(height: 24),
               if (midtransUrl != null)
                 ElevatedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Buka: $midtransUrl')),
-                    );
+                  onPressed: () async {
+                    final uri = Uri.parse(midtransUrl!);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    } else {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Gagal membuka: $midtransUrl')),
+                        );
+                      }
+                    }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A73E8),
+                    backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                   ),
                   child: const Text('Bayar Sekarang'),
@@ -494,9 +856,7 @@ class _OrderSuccessScreen extends StatelessWidget {
               TextButton(
                 onPressed: () => Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const Scaffold(
-                    body: Center(child: Text('Kembali ke Beranda')),
-                  )),
+                  MaterialPageRoute(builder: (_) => const HomeScreen()),
                   (_) => false,
                 ),
                 child: const Text('Kembali ke Beranda'),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
+import '../helpers/theme.dart';
 import '../widgets/product_card.dart';
 import 'product_detail_screen.dart';
 
@@ -23,12 +24,24 @@ class _WishlistScreenState extends State<WishlistScreen> {
   }
 
   Future<void> _loadWishlist() async {
+    if (!_api.hasToken) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     setState(() => _loading = true);
     try {
       final res = await _api.get('/wishlist');
       if (!mounted) return;
+      List<dynamic> raw;
+      if (res is List) {
+        raw = res;
+      } else if (res is Map && res.containsKey('data')) {
+        raw = res['data'] as List;
+      } else {
+        raw = [];
+      }
       setState(() {
-        _products = (res as List)
+        _products = raw
             .map((e) => Product.fromJson(e as Map<String, dynamic>))
             .toList();
         _loading = false;
@@ -44,44 +57,52 @@ class _WishlistScreenState extends State<WishlistScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Wishlist'),
-        backgroundColor: const Color(0xFF1A73E8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _products.isEmpty
-              ? const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.favorite_border, size: 64, color: Colors.grey),
-                      SizedBox(height: 12),
-                      Text('Wishlist kosong', style: TextStyle(fontSize: 16, color: Colors.grey)),
-                    ],
+              ? SafeArea(
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.favorite_border, size: 64, color: Colors.grey),
+                        SizedBox(height: 12),
+                        Text('Wishlist kosong', style: TextStyle(fontSize: 16, color: Colors.grey)),
+                      ],
+                    ),
                   ),
                 )
               : RefreshIndicator(
                   onRefresh: _loadWishlist,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: GridView.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        childAspectRatio: 0.65,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                      ),
-                      itemCount: _products.length,
-                      itemBuilder: (_, i) => ProductCard(
-                        product: _products[i],
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ProductDetailScreen(product: _products[i]),
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(12, 12, 12, 12),
+                        sliver: SliverGrid(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 0.62,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => ProductCard(
+                              product: _products[index],
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ProductDetailScreen(product: _products[index]),
+                                ),
+                              ),
+                            ),
+                            childCount: _products.length,
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
     );

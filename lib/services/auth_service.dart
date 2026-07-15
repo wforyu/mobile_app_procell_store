@@ -41,7 +41,33 @@ class AuthService {
     await _api.clearToken();
   }
 
-  Future<void> updateProfile(Map<String, dynamic> data) async {
-    await _api.put('/profile', body: data);
+  Future<User> updateProfile(Map<String, dynamic> data) async {
+    final res = await _api.put('/profile', body: data);
+    return User.fromJson(res);
+  }
+
+  Future<void> forgotPassword(String email) async {
+    await _api.post('/auth/forgot-password', body: {'email': email});
+  }
+
+  Future<void> resetPassword(String email, String token, String password, String passwordConfirmation) async {
+    await _api.post('/auth/reset-password', body: {
+      'email': email,
+      'token': token,
+      'password': password,
+      'password_confirmation': passwordConfirmation,
+    });
+  }
+
+  Future<void> updatePassword(String currentPassword, String newPassword, String newPasswordConfirmation) async {
+    await _api.put('/auth/password', body: {
+      'current_password': currentPassword,
+      'password': newPassword,
+      'password_confirmation': newPasswordConfirmation,
+    });
+  }
+
+  Future<void> deleteAccount(String password) async {
+    await _api.delete('/profile', body: {'password': password});
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/product.dart';
+import '../helpers/theme.dart';
 
 class ProductCard extends StatelessWidget {
   final Product product;
@@ -107,10 +108,10 @@ class ProductCard extends StatelessWidget {
                       ),
                     Text(
                       product.effectivePriceFormatted,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A73E8)),
+                          color: AppColors.primary),
                     ),
                   ],
                 ),
